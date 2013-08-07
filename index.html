@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <meta charset='utf-8' />
+    <meta http-equiv="X-UA-Compatible" content="chrome=1" />
+    <meta name="description" content="Aura : Aura is a UI framework for developing dynamic web apps for mobile and desktop devices, while providing a scalable long-lived lifecycle to support building apps engineered for growth. It supports partitioned multi-tier component development that bridges the client and server." />
+
+    <link rel="stylesheet" type="text/css" media="screen" href="stylesheets/stylesheet.css">
+
+    <title>Aura</title>
+  </head>
+
+  <body>
+
+    <!-- HEADER -->
+    <div id="header_wrap" class="outer">
+        <header class="inner">
+          <a id="forkme_banner" href="https://github.com/forcedotcom/aura">View on GitHub</a>
+
+          <h1 id="project_title">Aura</h1>
+          <h2 id="project_tagline">Aura is a UI framework for developing dynamic web apps for mobile and desktop devices, while providing a scalable long-lived lifecycle to support building apps engineered for growth. It supports partitioned multi-tier component development that bridges the client and server.</h2>
+
+            <section id="downloads">
+              <a class="zip_download_link" href="https://github.com/forcedotcom/aura/zipball/master">Download this project as a .zip file</a>
+              <a class="tar_download_link" href="https://github.com/forcedotcom/aura/tarball/master">Download this project as a tar.gz file</a>
+            </section>
+        </header>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div id="main_content_wrap" class="outer">
+      <section id="main_content" class="inner">
+        <h2>
+<a name="what-is-aura" class="anchor" href="#what-is-aura"><span class="octicon octicon-link"></span></a>What is Aura?</h2>
+
+<p>Aura is a UI framework for developing dynamic web apps for mobile and desktop 
+devices, while providing a scalable long-lived lifecycle to support building apps
+engineered for growth. It supports partitioned multi-tier component development 
+that bridges the client and server.</p>
+
+<p>To find out more about Aura, see the instructions at the end of this README for 
+accessing the documentation on your localhost after you build the project. </p>
+
+<h2>
+<a name="how-do-i-develop-with-aura" class="anchor" href="#how-do-i-develop-with-aura"><span class="octicon octicon-link"></span></a>How Do I Develop with Aura?</h2>
+
+<p>You can build your user interface at a granular level and easily integrate with
+popular toolkits and libraries, such as jQuery. Aura's lightweight and scalable 
+architecture uses two key building blocks: components and events.</p>
+
+<p>Components use markup that looks similar to HTML. You can also use HTML or any other code that can
+execute within an HTML page. Components are encapsulated and their internals stay 
+private. You can extend existing components to customize their behavior. </p>
+
+<p>The robust event model enables you to develop loosely coupled components. Once 
+you define the events that interact with your components, your team can work on 
+the components in parallel to quickly build a powerful app.</p>
+
+<p>Aura also supports a powerful expression language, embedded testing, performance, and security features.</p>
+
+<h2>
+<a name="how-do-i-start" class="anchor" href="#how-do-i-start"><span class="octicon octicon-link"></span></a>How Do I Start?</h2>
+
+<p>The easiest way to get up and running is from the command line, but you can easily use Aura
+with your favorite IDE too.</p>
+
+<h3>
+<a name="were-putting-the-final-touches-on-the-release-so-this-quick-start-isnt-working-right-now" class="anchor" href="#were-putting-the-final-touches-on-the-release-so-this-quick-start-isnt-working-right-now"><span class="octicon octicon-link"></span></a>We're putting the final touches on the release so this quick start isn't working right now.</h3>
+
+<p>Come back soon to try it out.</p>
+
+<h3>
+<a name="prerequisites" class="anchor" href="#prerequisites"><span class="octicon octicon-link"></span></a>Prerequisites</h3>
+
+<p>You need:</p>
+
+<ul>
+<li>Java Development Kit (JDK) 1.6</li>
+<li>Apache Maven 3</li>
+</ul><h3>
+<a name="step-1-generate-a-template-from-the-aura-archetype" class="anchor" href="#step-1-generate-a-template-from-the-aura-archetype"><span class="octicon octicon-link"></span></a>Step 1: Generate a Template from the Aura Archetype</h3>
+
+<h3>
+<a name="were-putting-the-final-touches-on-the-release-so-this-quick-start-isnt-working-right-now-1" class="anchor" href="#were-putting-the-final-touches-on-the-release-so-this-quick-start-isnt-working-right-now-1"><span class="octicon octicon-link"></span></a>We're putting the final touches on the release so this quick start isn't working right now.</h3>
+
+<p>Come back soon to try it out.</p>
+
+<ol>
+<li>Open a command line window.</li>
+<li>
+<p>Navigate to the directory where you want to create your project template and run:</p>
+
+<p><code>mvn archetype:generate -DarchetypeCatalog=http://maven.auraframework.org/libs-release-local/archetype-catalog.xml</code></p>
+</li>
+<li><p>When prompted to choose an archetype, enter <code>1</code>.</p></li>
+<li><p>Select the latest archetype version, or press enter for the default version.
+   The archetype is downloaded to your machine.</p></li>
+<li>
+<p>Enter these values:</p>
+
+<pre><code>
+Define value for property 'groupId': org.myGroup
+Define value for property 'artifactId': helloWorld
+Define value for property 'version': 1.0-SNAPSHOT
+Define value for property 'package': org.myGroup
+</code></pre>
+
+<p><strong>Note</strong>: The artifactId is also the name of the project as it appears in the Package
+Explorer. It can only contain alphanumeric characters.</p>
+</li>
+<li>
+<p>When prompted to confirm properties configuration, enter <code>Y</code>.
+The following output confirms that your template has been generated successfully.</p>
+
+<pre><code>
+[INFO] ----------------------------------------------------------------------------
+[INFO] Using following parameters for creating project from Archetype: aura-archetype:0.0.1-SNAPSHOT
+[INFO] ----------------------------------------------------------------------------
+[INFO] Parameter: groupId, Value: org.myGroup
+[INFO] Parameter: artifactId, Value: helloWorld
+[INFO] Parameter: version, Value: 1.0-SNAPSHOT
+[INFO] Parameter: package, Value: org.myGroup
+[INFO] Parameter: packageInPathFormat, Value: org.myGroup
+[INFO] Parameter: package, Value: org.myGroup
+[INFO] Parameter: version, Value: 1.0-SNAPSHOT
+[INFO] Parameter: groupId, Value: org.myGroup
+[INFO] Parameter: artifactId, Value: foo
+[INFO] project created from Archetype in dir: /home/
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: 33.656s
+[INFO] Finished at: Tue Jul 16 14:39:07 PST 2013
+[INFO] Final Memory: 10M/180M
+[INFO] ------------------------------------------------------------------------
+</code></pre>
+</li>
+</ol><h3>
+<a name="step-2-build-and-run-your-project" class="anchor" href="#step-2-build-and-run-your-project"><span class="octicon octicon-link"></span></a>Step 2: Build and Run Your Project</h3>
+
+<ol>
+<li>
+<p>On the command line, navigate to the directory for your new app.</p>
+
+<p><code>cd helloWorld</code> </p>
+</li>
+<li>
+<p>Start the Jetty server on port 8080.</p>
+
+<p><code>mvn jetty:run</code></p>
+
+<p>To use another port, append: <code>-Djetty.port=portNumber. For example, mvn jetty:run -Djetty.port=9877</code>.</p>
+</li>
+<li><p>Test your app in a browser.
+   <code>http://localhost:8080/helloWorld/helloWorld.app</code><br>
+You should see a simple greeting in your browser.</p></li>
+<li>
+<p>To stop the Jetty server and free up the port when you are finished, press <code>CTRL+C</code> on the command line.</p>
+
+<p><strong>Note</strong>: the helloWorld/pom.xml file has a <code>&lt;dependencies&gt;</code> section, which lists the <code>&lt;version&gt;</code> of each Aura 
+artifact in your project. They define the version of Aura that your project is using and each artifact 
+ should use the same version.</p>
+</li>
+</ol><p>To find out more about Aura, start up your Jetty server and type <code>http://localhost:9090/auradocs</code> into your browser
+to access the documentation.</p>
+      </section>
+    </div>
+
+    <!-- FOOTER  -->
+    <div id="footer_wrap" class="outer">
+      <footer class="inner">
+        <p class="copyright">Aura maintained by <a href="https://github.com/forcedotcom">forcedotcom</a></p>
+        <p>Published with <a href="http://pages.github.com">GitHub Pages</a></p>
+      </footer>
+    </div>
+
+    
+
+  </body>
+</html>
