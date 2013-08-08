@@ -17,8 +17,8 @@
     <div id="header_wrap" class="outer">
         <header class="inner">
           <a id="forkme_banner" href="https://github.com/forcedotcom/aura">View on GitHub</a>
-          
-          <h1 id="project_title"><img src="images/auralogo.png" style="width: 300px;"/></h1>
+
+          <h1 id="project_title">Aura</h1>
           <h2 id="project_tagline">Aura is a UI framework for developing dynamic web apps for mobile and desktop devices, while providing a scalable long-lived lifecycle to support building apps engineered for growth. It supports partitioned multi-tier component development that bridges the client and server.</h2>
 
             <section id="downloads">
@@ -62,11 +62,10 @@ the components in parallel to quickly build a powerful app.</p>
 <h2>
 <a name="how-do-i-start" class="anchor" href="#how-do-i-start"><span class="octicon octicon-link"></span></a>How Do I Start?</h2>
 
-          <img src="images/hardhatarea.jpg" style="width: 300px;"/>
-
 <p>The easiest way to get up and running is from the command line, but you can easily use Aura
 with your favorite IDE too.</p>
 
+<h3>
 <a name="prerequisites" class="anchor" href="#prerequisites"><span class="octicon octicon-link"></span></a>Prerequisites</h3>
 
 <p>You need:</p>
@@ -82,7 +81,7 @@ with your favorite IDE too.</p>
 <li>
 <p>Navigate to the directory where you want to create your project template and run:</p>
 
-<p><code>mvn archetype:generate -DarchetypeCatalog=http://maven.auraframework.org/libs-snapshot-local/archetype-catalog.xml</code></p>
+<p><code>mvn archetype:generate -DarchetypeCatalog=http://repo.auraframework.org/libs-release-local/archetype-catalog.xml</code></p>
 </li>
 <li><p>When prompted to choose an archetype, enter <code>1</code>.</p></li>
 <li><p>Select the latest archetype version, or press enter for the default version.
@@ -97,8 +96,7 @@ Define value for property 'version': 1.0-SNAPSHOT
 Define value for property 'package': org.myGroup
 </code></pre>
 
-<p><strong>Note</strong>: The artifactId is also the name of the project as it appears in the Package
-Explorer. It can only contain alphanumeric characters.</p>
+<p><strong>Note</strong>: The artifactId can only contain alphanumeric characters.</p>
 </li>
 <li>
 <p>When prompted to confirm properties configuration, enter <code>Y</code>.
@@ -136,6 +134,15 @@ The following output confirms that your template has been generated successfully
 
 <p><code>cd helloWorld</code> </p>
 </li>
+<li><p>For just a bit you'll need to edit the pom.xml file in the current directory, find the  section and add this to it - and yes we're working on fixing this right now:</p></li>
+</ol><pre><code>
+    &lt;repository&gt;
+        &lt;id&gt;libs-external&lt;/id&gt;
+        &lt;url&gt;http://repo.auraframework.org/libs-release&lt;/url&gt;
+    &lt;/repository&gt;    
+</code></pre>
+
+<ol>
 <li>
 <p>Start the Jetty server on port 8080.</p>
 
