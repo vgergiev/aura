@@ -15,75 +15,68 @@
  */
 ({
 	/*
-	 * Tests to verify componentClass give us same render/reRender/afterRender/unRender method as componentDef
+	 * Tests to verify componentClass give us same render/reRender/afterRender/unRender method on every instance
 	*/
 	getMethodBody : function(methodString) {
 		return methodString.split('{')[1];
 	},
-	
-	testRenderDefAreTheSame : {
+
+	testRenderAreTheSame : {
 		test: function(testCmp) {
 			var cc = $A.componentService.getComponentClass("markup://auratest:componentClassParent");
-			var cmpDef = testCmp.getDef();
-			var fromComponentClass = cc.prototype.render;
-			var fromComopnentDef = cmpDef.getRendererDef()["renderMethod"];
-			$A.test.assertTrue((fromComponentClass === fromComopnentDef),
+			var fromComponentClass = cc.prototype.renderer.render;
+			var fromComponentInstance = testCmp.getRenderer()["render"];
+			$A.test.assertTrue((fromComponentClass === fromComponentInstance),
 					"render function from componentClass and componentDef should be the same");
 		}
 	},
-	
-	testReRenderDefAreTheSame : { 
+
+	testReRenderAreTheSame : {
 		test: function(testCmp) {
 			var cc = $A.componentService.getComponentClass("markup://auratest:componentClassParent");
-			var cmpDef = testCmp.getDef();
-			
-			var fromComponentClass = cc.prototype.rerender;
-			var fromComopnentDef = cmpDef.getRendererDef()["rerenderMethod"];
-			$A.test.assertTrue((fromComponentClass === fromComopnentDef),
+			var fromComponentClass = cc.prototype.renderer.rerender;
+			var fromComponentInstance = testCmp.getRenderer()["rerender"];
+			$A.test.assertTrue((fromComponentClass === fromComponentInstance),
 					"rerender function from componentClass and componentDef should be the same");
 		}
 	},
-	
-	testAfterRenderDefAreTheSame : { 
+
+	testAfterRenderAreTheSame : {
 		test: function(testCmp) {
 			var cc = $A.componentService.getComponentClass("markup://auratest:componentClassParent");
-			var cmpDef = testCmp.getDef();
-			
-			var fromComponentClass = cc.prototype.afterrerender;
-			var fromComopnentDef = cmpDef.getRendererDef()["afterrenderMethod"];
-			$A.test.assertTrue((fromComponentClass === fromComopnentDef),
-					"afterrender function from componentClass and componentDef should be the same");
+			var fromComponentClass = cc.prototype.renderer.afterRender;
+			var fromComponentInstance = testCmp.getRenderer()["afterRender"];
+			$A.test.assertTrue((fromComponentClass === fromComponentInstance),
+					"afterRender function from componentClass and componentDef should be the same");
 		}
 	},
-	
-	testUnRenderDefAreTheSame : { 
+
+	testUnRenderAreTheSame : {
 		test: function(testCmp) {
 			var cc = $A.componentService.getComponentClass("markup://auratest:componentClassParent");
-			var cmpDef = testCmp.getDef();
-			
-			var fromComponentClass = cc.prototype.unrender;
-			var fromComopnentDef = cmpDef.getRendererDef()["unrenderMethod"];
-			$A.test.assertTrue((fromComponentClass === fromComopnentDef),
+			var fromComponentClass = cc.prototype.renderer.unrender;
+			var fromComponentInstance = testCmp.getRenderer()["unrender"];
+			$A.test.assertTrue((fromComponentClass === fromComponentInstance),
 					"unrender function from componentClass and componentDef should be the same");
 		}
 	},
-	
-	//check component from $A.createComponent is instanceof what we get from componentClass
-	testCreateComponentReturnCorrectType : {
-		test: function(testCmp) {
-			var type="markup://aura:text";
-			var attributes = null;
+
+    //check component from $A.createComponent is instanceof what we get from componentClass
+    testCreateComponentReturnCorrectType : {
+        test: function(testCmp) {
+            var type="markup://aura:text";
+            var attributes = null;
             $A.createComponent(type, attributes, function(targetComponent){
-            	var cmpFromComponentClass = $A.componentService.getComponentClass(type);
-            	$A.test.assertTrue(targetComponent instanceof cmpFromComponentClass);
+                var cmpFromComponentClass = $A.componentService.getComponentClass(type);
+                $A.test.assertTrue(targetComponent instanceof cmpFromComponentClass);
             })
-		}
-	},
-	
+        }
+    },
+
 	//get a component with server dependency via $A.createComponent
 	testCreateComponentServerDependencyReturnCorrectType : {
 		test: function(testCmp) {
-			var type="markup://auratest:componentClassUnloaded"; 
+			var type="markup://auratest:componentClassUnloaded";
 			var attributes = null;
 			var done = false;
 			var newComponent;
@@ -92,7 +85,7 @@
             	done = true;
             });
 			$A.test.addWaitForWithFailureMessage(true,
-        			function() { 
+        			function() {
 						return done;
 					},
 					"createComponent fail to get us a new component",
@@ -101,10 +94,10 @@
 						$A.test.assertTrue(newComponent instanceof cmpFromComponentClass);
 					}
 			);
-            
+
 		}
 	},
-	
+
 	testCreateComponentsReturnCorrectType : {
 		test: function(testCmp) {
 			var type="markup://aura:text";
@@ -124,120 +117,41 @@
 			});
 		}
 	},
-	
-	testNewComponentReturnCorrectType : {
+
+	testNewCmpFromConfigReturnCorrectType : {
 		test: function(testCmp) {
-			var type="markup://aura:text";
+			var type = "markup://aura:text";
 			var config = {
-	                componentDef: type,
-	                attributes: {
-	                    values: {
-	                        value: "something",
-	                    }
-	                }
-	            }
-			var newCmp = $A.componentService.newComponent(config);
+                componentDef: { descriptor: type },
+                attributes: { values: { value: "something" } }
+            };
+			var newCmp = $A.createComponentFromConfig(config);
 			var cmpFromComponentClass = $A.componentService.getComponentClass(type);
         	$A.test.assertTrue(newCmp instanceof cmpFromComponentClass);
 		}
 	},
-	
-	testNewComponentServerDependencyReturnCorrectType : {
-		test: function(testCmp) {
-			var type="markup://auratest:componentClassUnloaded";
-			var config = {
-	                componentDef: type,
-	            }
-			var newCmp = $A.componentService.newComponent(config);
-			testCmp.find("serverInParent").set("v.body", [newCmp]);
-			var cmpFromComponentClass = $A.componentService.getComponentClass(type);
-			//for newCmp, first we will get a place holder, once the response from server arrived, we will get a real one
-			$A.test.addWaitForWithFailureMessage(true,
-        			function() { 
-						var placeholderBody = newCmp.get("v.body")[0];
-						if(placeholderBody) {
-							var qname = placeholderBody.getDef().getDescriptor().getQualifiedName();
-							return $A.test.contains(qname, type);
-						} else {
-							return false;
-						}
-					},
-					"placeholder didn't get replaced with real component we want",
-					function() {
-						var cmpFromComponentClass = $A.componentService.getComponentClass(type);
-						$A.test.assertTrue(newCmp.get("v.body")[0] instanceof cmpFromComponentClass);
-					}
-			);
-		}
-	},
-	
-	testNewComponentDeprecatedReturnCorrectType : {
-		test: function(testCmp) {
-			var type="markup://aura:text";
-			var config = {
-	                componentDef: type,
-	                attributes: {
-	                    values: {
-	                        value: "something",
-	                    }
-	                }
-	            }
-			var newCmp = $A.componentService.newComponentDeprecated(config);
-			var cmpFromComponentClass = $A.componentService.getComponentClass(type);
-        	$A.test.assertTrue(newCmp instanceof cmpFromComponentClass);
-		}
-	},
-	
-	testNewComponentDeprecatedServerDependencyReturnCorrectType : {
-		test: function(testCmp) {
-        	var type="markup://auratest:componentClassUnloaded";
-			var config = {
-	                componentDef: type,
-	            }
-			var newCmp = $A.componentService.newComponentDeprecated(config);
-			testCmp.find("serverInParent").set("v.body", [newCmp]);
-			var cmpFromComponentClass = $A.componentService.getComponentClass(type);
-			//for newCmp, first we will get a place holder, once the response from server arrived, we will get a real one
-			$A.test.addWaitForWithFailureMessage(true,
-        			function() { 
-						var placeholderBody = newCmp.get("v.body")[0];
-						if(placeholderBody) {
-							var qname = placeholderBody.getDef().getDescriptor().getQualifiedName();
-							return $A.test.contains(qname, type);
-						} else {
-							return false;
-						}
-					},
-					"placeholder didn't get replaced with real component we want",
-					function() {
-						var cmpFromComponentClass = $A.componentService.getComponentClass(type);
-						$A.test.assertTrue(newCmp.get("v.body")[0] instanceof cmpFromComponentClass);
-					}
-			);
-		}
-	},
-	
+
 	testNewComponentAsyncReturnCorrectType : {
 		test: function(testCmp) {
-			var type="markup://aura:text";
+			var type = "markup://aura:text";
 			$A.componentService.newComponentAsync(
-	                this,
-	                function(newCmp){
-	                	var cmpFromComponentClass = $A.componentService.getComponentClass(type);
-	                	$A.test.assertTrue(newCmp instanceof cmpFromComponentClass);
-	                },
-	                type
-	            );
+                this,
+                function(newCmp){
+                	var cmpFromComponentClass = $A.componentService.getComponentClass(type);
+                	$A.test.assertTrue(newCmp instanceof cmpFromComponentClass);
+                },
+                type
+            );
 		}
 	},
-	
+
 	testNewComponentAsyncServerDependencyReturnCorrectType : {
 		test: function(testCmp) {
 			var type="markup://auratest:componentClassUnloaded";
 			var done = false;
 			var newComponent;
 			$A.test.addWaitForWithFailureMessage(true,
-        			function() { 
+        			function() {
 						return done;
 					},
 					"createComponent fail to get us a new component",
@@ -256,5 +170,5 @@
 	        );
 		}
 	}
-	
+
 })

@@ -24,41 +24,44 @@
      */
     function devDebugConsoleLog(level, message, error) {
         var stringVersion = null;
+        var showTrace = true;
+        var trace;
+        var logMsg = level + ": " + (!$A.util.isUndefinedOrNull(message) ? message : "");
+
         if (!$A.util.isUndefinedOrNull(message)) {
             stringVersion = level + ": " + message;
         }
+
         if (!$A.util.isUndefinedOrNull(error) && !$A.util.isUndefinedOrNull(error.message)) {
             stringVersion += " : " + error.message;
         }
 
-        var trace;
         if (error || level === "ERROR") {
             trace = $A.logger.getStackTrace(error);
         }
-        var logMsg = level + ": " + (!$A.util.isUndefinedOrNull(message) ? message : "");
 
         if (window["console"]) {
             var console = window["console"];
             var filter = level === "WARNING" ? "warn" : level.toLowerCase();
             if (console[filter]) {
+                console[filter](message);
                 if (!$A.util.isUndefinedOrNull(error)) {
                     console[filter](error);
-                } else {
-                    console[filter](message);
+                    showTrace = !(error.stack || error.stackTrace);
                 }
-                if (trace) {
+                if (showTrace && trace) {
                     for ( var j = 0; j < trace.length; j++) {
                         console[filter](trace[j]);
                     }
                 }
             } else if (console["group"]) {
                 console["group"](logMsg);
+                console["debug"](message);
                 if (!$A.util.isUndefinedOrNull(error)) {
                     console["debug"](error);
-                } else {
-                    console["debug"](message);
+                    showTrace = !(error.stack || error.stackTrace);
                 }
-                if (trace) {
+                if (showTrace && trace) {
                     console["group"]("stack");
                     for ( var i = 0; i < trace.length; i++) {
                         console["debug"](trace[i]);
@@ -90,43 +93,30 @@
         }
     }
 
-    /**
-     * Throws error and show error dialog for failed assertion unless in production
-     */
-    function devAssertError(level, message) {
-        $A.trace();
-        
-        if ($A.showErrors()) {
-            var elt = $A.util.getElement("auraErrorMessage");
-            if (elt) {
-                elt.innerHTML = message;
-                $A.util.removeClass(document.body, "loading");
-                $A.util.addClass(document.body, "auraError");
-            } else {
-                alert(message);
-            }
-        }
-        throw new $A.auraError(message);
-    }
-
     $A.logger.subscribe("INFO", devDebugConsoleLog);
     $A.logger.subscribe("WARNING", devDebugConsoleLog);
     $A.logger.subscribe("ERROR", devDebugConsoleLog);
-    $A.logger.subscribe("ASSERT", devAssertError);
-
     //#end
-    
-    //#if {"modes" : ["PRODUCTION", "PRODUCTIONDEBUG"]}
-    
-    /**
-     * $A.assert() will throw error in production
-     */
+
     $A.logger.subscribe("ASSERT", function(level, message) {
         throw new $A.auraError(message);
+    });
+
+    //#if {"modes" : ["PRODUCTIONDEBUG"]}
+    /**
+     * $A.warning() will log to console in proddebug
+     */
+    $A.logger.subscribe("WARNING", function(level, message, error) {
+        if(window["console"]){
+            window["console"].warn(level+": "+(message||error&&error.message));
+        }
     });
     //#end
 
     function handleError(message, e) {
+        //#if {"excludeModes" : ["PRODUCTION", "PRODUCTIONDEBUG"]}
+        devDebugConsoleLog("ERROR", message, e);
+        //#end
         var dispMsg = message;
         var evtArgs = {"message":dispMsg,"error":null,"auraError":null};
 
@@ -171,11 +161,11 @@
     window.onerror = (function() {
         var existing = window.onerror;
         var newHandler = function(message, url, line, col, err) {
+            handleError(message, err);
             if ($A.initialized) {
                 $A.logger.reportError(err);
+                $A.services.client.postProcess();
             }
-
-            handleError(message, err);
             return true;
         };
 

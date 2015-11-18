@@ -122,7 +122,7 @@ MemoryAdapter.prototype.updateMRU = function(key) {
  */
 MemoryAdapter.prototype.setItem = function(key, item, size) {
     var that = this;
-    return new Promise(function(success, error) {
+    return new Promise(function(success) {
         // existing item ?
         var existingItem = that.backingStore[key],
             existingItemSize = 0;
@@ -145,7 +145,10 @@ MemoryAdapter.prototype.setItem = function(key, item, size) {
         that.cachedSize += itemSize;
 
         // async evict
-        that.evict(spaceNeeded);
+        that.evict(spaceNeeded)
+        .then(undefined, function(error) {
+            $A.warning("Failed to evict items from storage: " + error);
+        });
 
         success();
     });
@@ -219,7 +222,7 @@ MemoryAdapter.prototype.evict = function(spaceNeeded) {
     var that = this;
     var spaceReclaimed = 0;
 
-    return new Promise(function(success) {
+    return new Promise(function(success, reject) {
         if (spaceReclaimed > spaceNeeded || that.mru.length <= 0) {
             success();
             return;
@@ -229,18 +232,20 @@ MemoryAdapter.prototype.evict = function(spaceNeeded) {
             var key = that.mru[0];
             that.removeItem(key)
                 .then(function(itemRemoved) {
-                    spaceReclaimed += itemRemoved.getSize();
+                        spaceReclaimed += itemRemoved.getSize();
 
-                    if (that.debugLoggingEnabled) {
-                        var msg = ["evicted", key, itemRemoved, spaceReclaimed].join(" ");
-                        that.log(msg);
-                    }
+                        if (that.debugLoggingEnabled) {
+                            var msg = ["evicted", key, itemRemoved, spaceReclaimed].join(" ");
+                            that.log(msg);
+                        }
 
-                    if(spaceReclaimed > spaceNeeded || that.mru.length <= 0) {
-                        success();
-                    } else {
-                        pop();
-                    }
+                        if(spaceReclaimed > spaceNeeded || that.mru.length <= 0) {
+                            success();
+                        } else {
+                            pop();
+                        }
+                })["catch"](function(error) {
+                    reject(error);
                 });
         };
         pop();
@@ -290,7 +295,7 @@ MemoryAdapter.prototype.sweep = function() {
         }
 
         // When all of the remove promises have completed...
-        return Promise.all(promiseSet).then(
+        return Promise.all(promiseSet).then( //eslint-disable-line consistent-return
             function () {
                 that.log("sweep() - complete");
             },
@@ -308,9 +313,6 @@ MemoryAdapter.prototype.deleteStorage = function() {
     this.reset();
     return Promise["resolve"]();
 };
-
-Aura.Storage.MemoryAdapter = MemoryAdapter;
-
 
 /**
  * @description A cache entry in the backing store of the MemoryAdapter.
@@ -336,8 +338,12 @@ MemoryAdapter.Entry.prototype.getSize = function() {
     return this.size;
 };
 
+
 $A.storageService.registerAdapter({
     "name": MemoryAdapter.NAME,
     "adapterClass": MemoryAdapter,
     "secure": true
 });
+
+Aura.Storage.MemoryAdapter = MemoryAdapter;
+

@@ -8,7 +8,7 @@
      */
     testMethodAccessible: {
         test: function(cmp) {
-            $A.test.assertDefined($A.componentService["newComponentDeprecated"]);
+            $A.test.assertDefined($A.componentService["createComponentFromConfig"]);
         }
     },
 
@@ -16,30 +16,15 @@
         test: function(cmp) {
             var expected = "markup://aura:text";
             var config = {
-                    componentDef: expected,
-                    attributes: { values: { value: "fyiders" } }
+                componentDef : { descriptor: expected },
+                attributes : { values: { value: "fyiders" } }
             };
 
             $A.metricsService.disablePlugin("componentService");
-            var withoutPlugin = $A.componentService.newComponentDeprecated(config);
+            var withoutPlugin = $A.componentService.createComponentFromConfig(config);
 
             $A.metricsService.enablePlugin("componentService");
-            var withPlugin = $A.componentService.newComponentDeprecated(config);
-
-            $A.test.assertEquals(expected, withoutPlugin.getDef().getDescriptor().getQualifiedName());
-            $A.test.assertEquals(expected, withPlugin.getDef().getDescriptor().getQualifiedName());
-        }
-    },
-
-    testConfigAsString: {
-        test: function(cmp) {
-            var expected = "markup://aura:text";
-
-            $A.metricsService.disablePlugin("componentService");
-            var withoutPlugin = $A.componentService.newComponentDeprecated(expected);
-
-            $A.metricsService.enablePlugin("componentService");
-            var withPlugin = $A.componentService.newComponentDeprecated(expected);
+            var withPlugin = $A.componentService.createComponentFromConfig(config);
 
             $A.test.assertEquals(expected, withoutPlugin.getDef().getDescriptor().getQualifiedName());
             $A.test.assertEquals(expected, withPlugin.getDef().getDescriptor().getQualifiedName());

@@ -15,11 +15,14 @@
  */
 package org.auraframework.impl.system;
 
+import java.io.IOException;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.locks.Lock;
 
 import javax.annotation.CheckForNull;
@@ -55,6 +58,7 @@ import org.auraframework.util.text.GlobMatcher;
 import org.auraframework.util.text.Hash;
 
 import com.google.common.base.Optional;
+import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -72,6 +76,27 @@ public class MasterDefRegistryImpl implements MasterDefRegistry {
     private static final Logger logger = Logger.getLogger(MasterDefRegistryImpl.class);
 
     private static final ImmutableSortedSet<String> cacheDependencyExceptions = ImmutableSortedSet.of(
+            //
+            // FIXME: these following 16 lines (applauncher) should be removed ASAP. They are here because
+            // we do not detect file backed apex, and we probably don't really want to.
+            //
+            "apex://applauncher.accountsettingscontroller",
+            "apex://applauncher.applauncherapexcontroller",
+            "apex://applauncher.applauncherdesktopcontroller",
+            "apex://applauncher.applauncherheadercontroller",
+            "apex://applauncher.applaunchersetupdesktopcontroller",
+            "apex://applauncher.applaunchersetupreorderercontroller",
+            "apex://applauncher.applaunchersetuptilecontroller",
+            "apex://applauncher.appmenu",
+            "apex://applauncher.changepasswordcontroller",
+            "apex://applauncher.communitylogocontroller",
+            "apex://applauncher.employeeloginlinkcontroller",
+            "apex://applauncher.forgotpasswordcontroller",
+            "apex://applauncher.identityheadercontroller",
+            "apex://applauncher.loginformcontroller",
+            "apex://applauncher.selfregistercontroller",
+            "apex://applauncher.sociallogincontroller",
+
             "apex://array",
             "apex://aura.component",
             "apex://blob",
@@ -92,6 +117,7 @@ public class MasterDefRegistryImpl implements MasterDefRegistry {
             "apex://sobject",
             "apex://time"
             );
+
     private final static int ACCESS_CHECK_CACHE_SIZE = 4096;
 
     private final Lock rLock;
@@ -180,11 +206,6 @@ public class MasterDefRegistryImpl implements MasterDefRegistry {
     }
 
     private boolean isOkForDependencyCaching(DefDescriptor<?> descriptor) {
-        // if compound, OK as these tests are also conducted on the compound's target
-        if (descriptor.getPrefix().equals("compound")) {
-            return true;
-        }
-
         // test cacheDependencyExceptions (like static types in Apex)
         String descriptorName = descriptor.getQualifiedName().toLowerCase();
 
@@ -524,7 +545,7 @@ public class MasterDefRegistryImpl implements MasterDefRegistry {
             } else {
                 // if not a cacheable registry or not shouldCache, test other exceptions that might still
                 // allow dependency caching (if it's from static registry, it can't affect our decision on
-                // depsCaching) test for special cases: compounds and static apex types
+                // depsCaching) test for special cases: static apex types
                 boolean qualified = isOkForDependencyCaching(compiling.descriptor);
 
                 currentCC.shouldCacheDependencies = qualified;
@@ -1366,6 +1387,38 @@ public class MasterDefRegistryImpl implements MasterDefRegistry {
             }
         }
         return null;
+    }
+
+    @Override
+    public String getCachedString(String uid, DefDescriptor<?> descriptor, String key, Callable<String> loader) throws QuickFixException, IOException {
+    	if (shouldCache(descriptor)) {
+	        DependencyEntry de = localDependencies.get(uid);
+
+	        if (de != null) {
+	        	try {
+	        		return stringsCache.get(getKey(de, descriptor, key), loader);
+	    		} catch (ExecutionException e) {
+	    			// Don't interfere if the callable caused these exceptions.
+	    		    Throwables.propagateIfInstanceOf(e.getCause(), IOException.class);
+	    		    Throwables.propagateIfInstanceOf(e.getCause(), QuickFixException.class);
+	    		    // Propagates as-is if RuntimeException, or wraps with a RuntimeException.
+	    		    Throwables.propagate(e);
+	    		}
+	        }
+        }
+
+    	// When caching is bypassed, execute the loader directly.
+    	try {
+			return loader.call();
+		} catch (Exception e) {
+			// Don't interfere if the call caused these exceptions.
+		    Throwables.propagateIfInstanceOf(e, IOException.class);
+		    Throwables.propagateIfInstanceOf(e, QuickFixException.class);
+		    // Propagates as-is if RuntimeException, or wraps with a RuntimeException.
+		    Throwables.propagate(e);
+		}
+
+    	return null;
     }
 
     @Override

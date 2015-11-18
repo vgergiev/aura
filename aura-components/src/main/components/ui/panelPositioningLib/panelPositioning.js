@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-function lib(constraint, elementProxyFactory, win) {
+function lib(constraint, elementProxyFactory, win) { //eslint-disable-line no-unused-vars
     'use strict';
 
     var ALIGN_REGEX = /^(left|right|center)\s(top|bottom|center)$/;
@@ -22,7 +22,6 @@ function lib(constraint, elementProxyFactory, win) {
     var w = win || window;
 
     var Constraint = constraint.Constraint;
-    var bakeOff = elementProxyFactory.bakeOff;
 
     var repositionScheduled = false;
 
@@ -93,7 +92,7 @@ function lib(constraint, elementProxyFactory, win) {
     // this is a fairly arbitrary number
     // that should still support 30fps updates
     // on most machines
-    function handleRepositionEvents(e) {
+    function handleRepositionEvents() {
         if(!timeoutHandler) {
             timeoutHandler = setTimeout(reposition, 10);
         }
@@ -106,7 +105,7 @@ function lib(constraint, elementProxyFactory, win) {
         eventsBound = true;
     }
 
-    function detachEvents() {
+    function detachEvents() { //eslint-disable-line no-unused-vars
         w.removeEventListener('resize', handleRepositionEvents);
         w.removeEventListener('scroll', handleRepositionEvents);
         eventsBound = false;
@@ -146,9 +145,6 @@ function lib(constraint, elementProxyFactory, win) {
                 bindEvents();
             }
 
-
-            var el = config.element;
-    		var targ = config.target;
             var constraintList = [];
 
             $A.assert(config.element && isDomNode(config.element), 'Element is undefined or missing');
@@ -161,22 +157,22 @@ function lib(constraint, elementProxyFactory, win) {
             if(config.align) {
                 $A.assert(!!config.align.match(ALIGN_REGEX), 'Invalid align string');
             }
-            if(config.targetAlign) {
+            if(!config.type && config.targetAlign) {
                 $A.assert(!!config.targetAlign.match(ALIGN_REGEX), 'Invalid targetAlign string');
             }
 
             config.element = elementProxyFactory.getElement(config.element);
             config.target = elementProxyFactory.getElement(config.target);
-            if(config.type !== 'bounding box' && config.type !== 'below'  && config.type !== 'inverse bounding box') {
-
+            if(!config.type) {
+                $A.assert(config.align, 'Required align string missing');
                 var constraintDirections = config.align.split(/\s/);
                 var vertConfig = $A.util.copy(config);
-
+                
                 //the vertical config is exactly the same, except if there is a topPad we use that value for pad
                 if(vertConfig.padTop !== undefined) {
                     vertConfig.pad = vertConfig.padTop;
                 }
-
+                
                 constraintList.push(new Constraint(directionMap.horiz[constraintDirections[0]], config));
                 constraintList.push(new Constraint(directionMap.vert[constraintDirections[1]], vertConfig));
 
@@ -196,15 +192,14 @@ function lib(constraint, elementProxyFactory, win) {
                 return {
 
                     disable: function() {
-
-                        constraintList.forEach(function(constraint) {
-                            constraint.detach();
+                        constraintList.forEach(function(constraintToDisable) {
+                            constraintToDisable.detach();
                         });
                     },
 
                     enable: function() {
-                        constraintList.forEach(function(constraint) {
-                            constraint.attach();
+                        constraintList.forEach(function(constraintToEnable) {
+                            constraintToEnable.attach();
                         });
                     },
 

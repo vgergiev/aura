@@ -28,7 +28,7 @@ ComponentServiceMetricsPlugin.NAME = "componentService";
 
 /** @export */
 ComponentServiceMetricsPlugin.prototype.initialize = function (metricsService) {
-    this.collector = metricsService;
+    this.metricsService = metricsService;
 
     if (this["enabled"]) {
         this.bind(metricsService);
@@ -39,7 +39,7 @@ ComponentServiceMetricsPlugin.prototype.initialize = function (metricsService) {
 ComponentServiceMetricsPlugin.prototype.enable = function () {
     if (!this["enabled"]) {
         this["enabled"] = true;
-        this.bind(this.collector);
+        this.bind(this.metricsService);
     }
 };
 
@@ -47,38 +47,24 @@ ComponentServiceMetricsPlugin.prototype.enable = function () {
 ComponentServiceMetricsPlugin.prototype.disable = function () {
     if (this["enabled"]) {
         this["enabled"] = false;
-        this.unbind(this.collector);
+        this.unbind(this.metricsService);
     }
 };
 
-ComponentServiceMetricsPlugin.prototype.bind = function (metricsService) {
-    var method = 'newComponentDeprecated',
-	    hook  = function () {
-            var original = Array.prototype.shift.apply(arguments);
-            var config   = arguments[0];
+ComponentServiceMetricsPlugin.prototype.createComponentOverride = function () {
+    var config = Array.prototype.shift.apply(arguments);
+    var cmpConfig = arguments[0];
+    var descriptor = $A.util.isString(cmpConfig) ? cmpConfig : (cmpConfig["componentDef"]["descriptor"] || cmpConfig["componentDef"]) + '';
 
-	        var descriptor;
-	        if ($A.util.isString(config)) {
-	            descriptor = config;
-	        } else {
-	            descriptor = (config["componentDef"]["descriptor"] || config["componentDef"]) + '';
-	        }
-            
-            metricsService.markStart(ComponentServiceMetricsPlugin.NAME, 'newCmp', {context: {descriptor : descriptor}});
-            var ret = original.apply(this, arguments);
-            metricsService.markEnd(ComponentServiceMetricsPlugin.NAME, 'newCmp', {context: {descriptor : descriptor}});
-            return ret;
-	    };
+    this.metricsService["markStart"](ComponentServiceMetricsPlugin.NAME, 'createComponent', { context: { "descriptor" : descriptor } });
+    var ret = config["fn"].apply(config["scope"], arguments);
+    this.metricsService["markEnd"](ComponentServiceMetricsPlugin.NAME, 'createComponent', { context: { "descriptor" : descriptor } });
 
-	metricsService.instrument(
-	    $A.componentService,
-	    method,
-	    ComponentServiceMetricsPlugin.NAME,
-	    false,/*async*/
-	    null,
-        null,
-        hook
-	);
+    return ret;
+};
+
+ComponentServiceMetricsPlugin.prototype.bind = function () {
+    $A.installOverride("ComponentService.createComponentPriv", this.createComponentOverride, this);
 };
 
 //#if {"excludeModes" : ["PRODUCTION"]}
@@ -87,24 +73,24 @@ ComponentServiceMetricsPlugin.prototype.postProcess = function (componentMarks) 
     var procesedMarks = [];
     var stack = [];
     for (var i = 0; i < componentMarks.length; i++) {
-        var id = componentMarks[i]["context"]["descriptor"];
         var phase = componentMarks[i]["phase"];
         if (phase === 'start') {
             stack.push(componentMarks[i]);
-        } else if (phase === 'end') {
+        } else if (phase === 'end' && stack.length) {
             var mark = $A.util.apply({}, stack.pop(), true, true);
-            mark["context"]  = $A.util.apply(mark["context"], componentMarks[i]["context"]);
-            mark["duration"] = componentMarks[i]["ts"] - mark["ts"];
-            procesedMarks.push(mark);
-            
+            if (mark["context"]["descriptor"] === componentMarks[i]["context"]["descriptor"]) {
+                mark["context"]  = $A.util.apply(mark["context"], componentMarks[i]["context"]);
+                mark["duration"] = componentMarks[i]["ts"] - mark["ts"];    
+                procesedMarks.push(mark);
+            }
         }
     }
     return procesedMarks;
 };
 //#end	
 
-ComponentServiceMetricsPlugin.prototype.unbind = function (metricsService) {
-    metricsService["unInstrument"]($A.componentService, 'newComponentDeprecated');
+ComponentServiceMetricsPlugin.prototype.unbind = function () {
+    $A.unInstallOverride("ComponentService.createComponentPriv", this.createComponentOverride);
 };
 
 $A.metricsService.registerPlugin({

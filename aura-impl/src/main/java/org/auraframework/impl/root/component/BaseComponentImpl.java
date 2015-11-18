@@ -214,7 +214,7 @@ BaseComponent<D, I> {
 
             // def can be null if a definition not found exception was thrown for that definition. Odd.
             if (def != null) {
-                ControllerDef cd = def.getDeclaredControllerDef();
+                ControllerDef cd = def.getLocalControllerDef();
                 if (cd != null) {
                     // Insure that this def is allowed to create an instance of the controller
                     defRegistry.assertAccess(descriptor, cd);
@@ -327,7 +327,11 @@ BaseComponent<D, I> {
             // This is 'case normalizing', as the client is actually case
             // sensitive for descriptors (ugh!).
             //
-            json.writeMapEntry("componentDef", def.getDescriptor());
+            json.writeMapKey("componentDef");
+        	json.writeMapBegin();
+        	json.writeMapEntry("descriptor", def.getDescriptor());
+        	json.writeMapEnd();
+            
             if (!descriptor.equals(originalDescriptor)) {
                 json.writeMapEntry("original", originalDescriptor);
             }
@@ -335,6 +339,12 @@ BaseComponent<D, I> {
 
             if ((attributeSet.getValueProvider() == null || hasProvidedAttributes) && !attributeSet.isEmpty()) {
                 json.writeMapEntry("attributes", attributeSet);
+            }
+
+            if (def.getAPIVersion() != null  && 
+            		Aura.getConfigAdapter().isPrivilegedNamespace(def.getDescriptor().getNamespace()) &&
+            		context.getCurrentCallingDescriptor() == null) {
+            	json.writeMapEntry("version", def.getAPIVersion());
             }
 
             if (def.getRendererDescriptor() != null) {

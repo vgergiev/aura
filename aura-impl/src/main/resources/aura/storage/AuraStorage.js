@@ -51,6 +51,9 @@ var AuraStorage = function AuraStorage(config) {
     this.adapter.setItem = this.adapter.setItem || this.adapter["setItem"];
     this.adapter.getAll = this.adapter.getAll || this.adapter["getAll"];
     this.adapter.deleteStorage = this.adapter.deleteStorage || this.adapter["deleteStorage"];
+    this.adapter.isSecure = this.adapter.isSecure || this.adapter["isSecure"];
+    this.adapter.isPersistent = this.adapter.isPersistent || this.adapter["isPersistent"];
+    this.adapter.clearOnInit = this.adapter.clearOnInit || this.adapter["clearOnInit"];
 
     var adapterConfig = $A.storageService.getAdapterConfig(this.adapter.getName());
     this.persistent = !$A.util.isUndefinedOrNull(adapterConfig["persistent"]) && adapterConfig["persistent"];
@@ -63,10 +66,17 @@ var AuraStorage = function AuraStorage(config) {
     this.adapter["getMRU"] = this.adapter.getMRU;
     //#end
 
+
+    // clear on init is special: it should complete before any subsequent operation
+    // is executed.
     if (clearStorageOnInit === true) {
         this.log("clearing " + this.getName() + " storage on init");
-        this.adapter.clear();
-    }
+        if (this.adapter.clearOnInit) {
+            this.adapter.clearOnInit();
+        } else {
+            this.adapter.clear();
+        }
+     }
 };
 
 /**
@@ -230,11 +240,9 @@ AuraStorage.prototype.remove = function(key, doNotFireModified) {
  * @private
  */
 AuraStorage.prototype.sweep = function() {
-
     // Do not sweep if we have lost our connection, we'll ignore expiration until sweeping resumes
     // OR if we've recently swept
     if (this._sweepingSuspended || ((new Date().getTime() - this.lastSweep) < (this.defaultExpiration / 60))) {
-        this.log("sweep() - skipping sweep");
         return;
     }
 
@@ -318,6 +326,9 @@ AuraStorage.prototype.log = function() {
  * @export
  */
 AuraStorage.prototype.isPersistent = function() {
+    if (this.adapter.isPersistent) {
+        return this.adapter.isPersistent();
+    }
     return this.persistent;
 };
 
@@ -327,6 +338,9 @@ AuraStorage.prototype.isPersistent = function() {
  * @export
  */
 AuraStorage.prototype.isSecure = function() {
+    if (this.adapter.isSecure) {
+        return this.adapter.isSecure();
+    }
     return this.secure;
 };
 

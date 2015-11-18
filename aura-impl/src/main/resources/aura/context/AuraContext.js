@@ -47,27 +47,22 @@ Aura.Context.AuraContext = function AuraContext(config, initCallback) {
     this.accessStack=[];
 
     var that = this;
-    if(!config["globalValueProviders"]){
-        config["globalValueProviders"]={};
-    }
-    $A.util.apply(config["globalValueProviders"],$A.globalValueProviders);
-
-    this.globalValueProviders = new Aura.Provider.GlobalValueProviders(config["globalValueProviders"], function(gvps) {
+    this.initGlobalValueProviders(config["globalValueProviders"], function(gvps) {
         var i, defs;
-        
+
         // Don't ask.... You just kinda have to love this....
         that.globalValueProviders = gvps;
         that.contextGlobals = that.globalValueProviders.getValueProvider("Global");
         // Careful now, the def is null, this fake action sets up our paths.
         that.currentAction = new Action(null, ""+that.num, null, null, false, null, false);
-        
+
         if(config["libraryDefs"]) {
             defs = config["libraryDefs"];
             for (i = 0; i < defs.length; i++) {
                 $A.componentService.createLibraryDef(defs[i]);
             }
         }
-        
+
         if (config["componentDefs"]) {
             defs = config["componentDefs"];
             for (i = 0; i < defs.length; i++) {
@@ -90,6 +85,33 @@ Aura.Context.AuraContext = function AuraContext(config, initCallback) {
     });
 };
 
+/**
+ * Temporary shim, until W-2812858 is addressed to serialize GVPs as a map and fix $A GVPs.
+ * Convert config GVPs from array to map, and merge $A GVPs, and create the context GVPs.
+ * @export
+ */
+Aura.Context.AuraContext.prototype.initGlobalValueProviders = function(gvps, callback) {
+    if ($A.util.isArray(gvps)) {
+        var map = {};
+
+        for (var i = 0; i < gvps.length; i++) {
+            var gvp = gvps[i];
+            var type = gvp["type"];
+            var values = gvp["values"];
+            map[type] = values;
+        }
+
+        gvps = map;
+    }
+
+    if(!gvps){
+        gvps = {};
+    }
+
+    $A.util.apply(gvps,$A.globalValueProviders);
+
+    this.globalValueProviders = new Aura.Provider.GlobalValueProviders(gvps, callback);
+};
 /**
  * Returns the mode for the current request. Defaults to "PROD" for production mode and "DEV" for development mode.
  * The HTTP request format is <code>http://<your server>/namespace/component?aura.mode=PROD</code>.
@@ -161,7 +183,7 @@ Aura.Context.AuraContext.prototype.addGlobalValueProvider = function(type,valueP
 /**
  * Provides access to global value providers.
  * For example, <code>$A.get("$Label.Related_Lists.task_mode_today");</code> gets the label value.
- * 
+ *
  * @return {GlobalValueProviders}
  * @private
  */
@@ -173,7 +195,7 @@ Aura.Context.AuraContext.prototype.getGlobalValueProvider = function(type) {
  * JSON representation of context for server requests.
  *
  * This must remain in sync with AuraTestingUtil so that we can accurately test.
- * 
+ *
  * @return {String} json representation
  * @private
  */
@@ -208,6 +230,7 @@ Aura.Context.AuraContext.prototype.merge = function(otherContext) {
     if (otherContext["mode"] !== this.getMode()) {
         throw new Error("[Mode mismatch] Expected '" + this.getMode() + "' instead tried to merge mode '" + otherContext["mode"] + "'");
     }
+
     if ($A.util.isUndefinedOrNull(this.fwuid)) {
         this.fwuid = otherContext["fwuid"];
     }
@@ -216,24 +239,24 @@ Aura.Context.AuraContext.prototype.merge = function(otherContext) {
     }
     this.globalValueProviders.merge(otherContext["globalValueProviders"]);
     $A.localizationService.init();
-    
-    if(otherContext["libraryDefs"]) {
+
+    if (otherContext["libraryDefs"]) {
         defs = otherContext["libraryDefs"];
         for (i = 0; i < defs.length; i++) {
             $A.componentService.createLibraryDef(defs[i]);
         }
     }
-    
+
     if (otherContext["componentDefs"]) {
         defs = otherContext["componentDefs"];
         for (i = 0; i < defs.length; i++) {
-            // only create when component def is an object with descriptor key
             // there are occasions when defs are just references (descriptor name)
             if (defs[i]["descriptor"]) {
-                $A.componentService.createDef(defs[i]);
+                $A.componentService.createComponentDef(defs[i]);
             }
         }
     }
+
     if (otherContext["eventDefs"]) {
         defs = otherContext["eventDefs"];
         for (i = 0; i < defs.length; i++) {
@@ -241,15 +264,15 @@ Aura.Context.AuraContext.prototype.merge = function(otherContext) {
         }
     }
 
-    
-    
+
+
     this.joinComponentConfigs(otherContext["components"], ""+this.getNum());
     this.joinLoaded(otherContext["loaded"]);
 };
 
 /**
  * FIXME: this should return a string, and it should probably not even be here.
- * 
+ *
  * @return {number} the 'num' for this context
  * @private
  * @export
@@ -526,8 +549,7 @@ Aura.Context.AuraContext.prototype.getStorage = function() {
         return undefined;
     }
 
-    var config = $A.storageService.getAdapterConfig(storage.getName());
-    return config["persistent"] ? storage : undefined;
+    return storage.isPersistent() ? storage : undefined;
 };
 
 /**

@@ -22,14 +22,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.*;
 import java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock;
 
-import aQute.bnd.annotation.component.Component;
-
 import org.apache.log4j.Logger;
 import org.auraframework.Aura;
+import org.auraframework.annotations.Annotations.ServiceComponent;
 import org.auraframework.builder.CacheBuilder;
 import org.auraframework.cache.Cache;
 import org.auraframework.def.*;
-import org.auraframework.ds.serviceloader.AuraServiceProvider;
 import org.auraframework.impl.cache.CacheImpl;
 import org.auraframework.service.CachingService;
 import org.auraframework.service.DefinitionService;
@@ -38,7 +36,7 @@ import org.auraframework.system.SourceListener;
 
 import com.google.common.base.Optional;
 
-@Component (provide=AuraServiceProvider.class)
+@ServiceComponent
 public class CachingServiceImpl implements CachingService {
 
     private static final long serialVersionUID = -3311707270226573084L;
@@ -160,7 +158,7 @@ public class CachingServiceImpl implements CachingService {
     public final Cache<String, String> getStringsCache() {
         return stringsCache;
     }
-
+    
     @Override
     public final Cache<String, Set<DefDescriptor<?>>> getDescriptorFilterCache() {
         return descriptorFilterCache;
@@ -269,38 +267,12 @@ public class CachingServiceImpl implements CachingService {
             existsCache.invalidate(adesc);
 
             switch (descriptor.getDefType()) {
-            case NAMESPACE:
-                // invalidate all DDs with the same namespace if its a namespace DD
-                invalidateScope(descriptor, true, false);
-                break;
             case INCLUDE:
                 invalidateSourceRelatedCaches(descriptor.getBundle());
                 break;
             default:
             }
         }
-    }
-
-    private void invalidateScope(DefDescriptor<?> descriptor, boolean clearNamespace, boolean clearName) {
-
-        final Set<DefDescriptor<?>> defsKeySet = defsCache.getKeySet();
-        final String namespace = descriptor.getNamespace();
-        final String name = descriptor.getName();
-
-        for (DefDescriptor<?> dd : defsKeySet) {
-            boolean sameNamespace = namespace.equals(dd.getNamespace());
-            boolean sameName = name.equals(dd.getName());
-            boolean shouldClear = (clearNamespace && clearName) ? (clearNamespace && sameNamespace)
-                    && (clearName && sameName)
-                    : (clearNamespace && sameNamespace)
-                            || (clearName && sameName);
-
-            if (shouldClear) {
-                defsCache.invalidate(dd);
-                existsCache.invalidate(dd);
-            }
-        }
-
     }
 
     /**

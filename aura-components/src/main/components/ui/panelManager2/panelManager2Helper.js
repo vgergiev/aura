@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 ({
-	PANELS_DEF      : {},  // Definitions of registered panels 
-    PANELS_OWNER    : {},  // Owner relationship who creates the panel (key) owned by -> value
+	PANELS_OWNER    : {},  // Owner relationship who creates the panel (key) owned by -> value
     PANELS_STACK    : [],  // The Panel Stack ordering
     PANELS_INSTANCE : {},  // Registered instances
+    containerManager: null,  // a reference to containerManager
 
 	initialize: function(cmp) {
         var containerManager = this.cmLib.containerManager;
@@ -79,7 +79,11 @@
         // TODO: Instead of assuming is the last one (which doesnt guarantee that is "active")
         // Change the logic on active to make sure we save that state internally
         var stack = this.PANELS_STACK;
-        callback(stack[stack.length - 1]);
+        var panel = stack[stack.length - 1];
+        if (panel && $A.util.isFunction(callback)) {
+            callback(panel);
+        }
+        return panel;
     },
     /*
     * Sets the context in which the panel is created
@@ -89,10 +93,12 @@
     setPanelOwner: function (panel, givenOwner) {
         var owner = givenOwner;
         if (!owner) {
-            var previousPanel = this.PANELS_STACK[this.PANELS_STACK.length - 1],
+            var previousBody = null;
+        	if (this.PANELS_STACK.length > 0) {
+                var previousPanel = this.PANELS_STACK[this.PANELS_STACK.length - 1];
                 previousBody = previousPanel && previousPanel.get('v.body');
-            
-            owner = !$A.util.isEmpty(previousBody) ? previousBody[0].getGlobalId() : null;
+        	}
+            owner = $A.util.isEmpty(previousBody) ? panel.getGlobalId() : previousBody[0].getGlobalId();
         }
 
         this.PANELS_OWNER[panel.getGlobalId()] = owner;
@@ -176,7 +182,7 @@
     * Destroy panel instance
     * @private
     */
-    destroyPanelInstance: function (cmp, config) {
+    destroyPanelInstance: function (cmp, config, doActivateNext) {
         var stack      = this.PANELS_STACK,
             panelParam = config.panelInstance,
             panelId    = $A.util.isComponent(panelParam) ? panelParam.getGlobalId() : panelParam,
@@ -204,7 +210,9 @@
             panelObj.destroyCallback(panelId);
         }
 
-        this.activateNextPanel(cmp);
+        if (doActivateNext !== false) {
+            this.activateNextPanel(cmp);
+        }
     },
 
     /**

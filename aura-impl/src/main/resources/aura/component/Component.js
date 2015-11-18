@@ -26,14 +26,10 @@
  *            config - component configuration
  * @param {Boolean}
  *            [localCreation] - local creation
- * @param {Boolean} [creatingPrototype] - creating a prototype only
  * @platform
  * @export
  */
-function Component(config, localCreation, creatingPrototype) {
-    if(creatingPrototype) {
-        return;
-    }
+function Component(config, localCreation) {
 
     // setup some basic things
     this.concreteComponentId = config["concreteComponentId"];
@@ -48,6 +44,7 @@ function Component(config, localCreation, creatingPrototype) {
     this.handlers = {};
     this.localIndex = {};
     this.destroyed=false;
+    this.version = config["version"];
 
     var context = $A.getContext();
 
@@ -59,7 +56,6 @@ function Component(config, localCreation, creatingPrototype) {
 
     if (act) {
         var currentPath = act.topPath();
-
         if (config["creationPath"]) {
             //
             // This is a server side config, so we need to sync ourselves with it.
@@ -71,7 +67,6 @@ function Component(config, localCreation, creatingPrototype) {
             this.creationPath = act.forceCreationPath(config["creationPath"]);
             forcedPath = true;
         } else if (!context.containsComponentConfig(currentPath) && !!localCreation) {
-
             // skip creation path if the current top path is not in server returned
             // componentConfigs and localCreation
 
@@ -84,6 +79,7 @@ function Component(config, localCreation, creatingPrototype) {
 
     // create the globally unique id for this component
     this.setupGlobalId(config["globalId"], localCreation);
+
 
     var partialConfig;
     if (this.creationPath && this.creationPath !== "client created") {
@@ -111,22 +107,24 @@ function Component(config, localCreation, creatingPrototype) {
     // sets this components definition, preferring partialconfig if it exists
     this.setupComponentDef(this.partialConfig || config);
 
-    // join attributes from partial config and config, preferring
-    // partial when overlapping
-    var configAttributes = {"values":{}};
+    // Saves a flag to indicate whether the component implements the root marker interface.
+    this.isRootComponent = $A.util.isUndefinedOrNull(this["meta"] && this["meta"]["extends"]) && this.isInstanceOf("aura:rootComponent");
+
+    // join attributes from partial config and config, preferring partial when overlapping
+    var configAttributes = { "values": {} };
+
     if (config["attributes"]) {
-        $A.util.apply(configAttributes["values"], config["attributes"]["values"],true);
+        $A.util.apply(configAttributes["values"], config["attributes"]["values"], true);
         configAttributes["valueProvider"] = config["attributes"]["valueProvider"] || config["valueProvider"];
     }
+
     if (partialConfig && partialConfig["attributes"]) {
-        $A.util.apply(configAttributes["values"],partialConfig["attributes"]["values"],true);
+        $A.util.apply(configAttributes["values"], partialConfig["attributes"]["values"], true);
         // NOTE: IT USED TO BE SOME LOGIC HERE TO OVERRIDE THE VALUE PROVIDER BECAUSE OF PARTIAL CONFIGS
         // IF WE RUN INTO ISSUES AT SOME POINT AFTER HALO, LOOK HERE FIRST!
     }
-    if(!configAttributes["values"]){
-        configAttributes["values"] = {};
-    }
-    if(!configAttributes["facetValueProvider"]){
+
+    if (!configAttributes["facetValueProvider"]) {
         configAttributes["facetValueProvider"] = this;
     }
 
@@ -135,7 +133,7 @@ function Component(config, localCreation, creatingPrototype) {
     this.facetValueProvider = configAttributes["facetValueProvider"];
 
     // initialize attributes
-    this.setupAttributes(this, configAttributes, localCreation);
+    this.setupAttributes(this, configAttributes);
 
     // instantiates this components model
     this.setupModel(config["model"], this);
@@ -143,9 +141,8 @@ function Component(config, localCreation, creatingPrototype) {
     // create all value providers for this component m/v/c etc.
     this.setupValueProviders(config["valueProviders"]);
 
-    // runs component provider and replaces this component with the
-    // provided one
-    this.injectComponent(config, this, localCreation);
+    // runs component provider and replaces this component with the provided one
+    this.injectComponent(config, localCreation);
 
     // instantiates this components methods
     this.setupMethods(config, this);
@@ -163,7 +160,6 @@ function Component(config, localCreation, creatingPrototype) {
     this.doIndex(this);
 
     // instantiate the renderer for this component
-    this.setupRenderer(this);
 
     // starting watching all values for events
     this.setupValueEventHandlers(this);
@@ -178,14 +174,11 @@ function Component(config, localCreation, creatingPrototype) {
         act.releaseCreationPath(this.creationPath);
     }
 
-
     this._destroying = false;
-
     this.fire("init");
 }
 
-Component.currentComponentId=0;
-
+Component.currentComponentId = 0;
 
 Component.prototype.nextGlobalId = function(localCreation) {
     if (!localCreation) {
@@ -208,24 +201,28 @@ Component.prototype.nextGlobalId = function(localCreation) {
     }
 };
 
-
 /**
  * The globally unique id of this component
  */
 Component.prototype.setupGlobalId = function(globalId, localCreation) {
-    if (!globalId || !localCreation) {
-        globalId = this.nextGlobalId(localCreation);
-    }
+    globalId = globalId || this.nextGlobalId(localCreation);
 
-    var old = $A.componentService.get(globalId);
-    if (old) {
-        $A.log("Component.setupGlobalId: globalId already in use: '"+globalId+"'.");
+    if ($A.componentService.get(globalId)) {
+        $A.log("Component.setupGlobalId: globalId already in use: '" + globalId + "'.");
     }
 
     this.globalId = globalId;
 };
 
 
+/**
+ * Gets the component class name.
+ *
+ * @export
+ */
+Component.prototype.getName = function() {
+    return this["meta"]["name"];
+};
 
 /**
  * Gets the ComponentDef Shorthand: <code>get("def")</code>
@@ -767,7 +764,7 @@ Component.prototype.destroy = function(async) {
         this.model = null;
         this.attributeSet = null;
         this.valueProviders = null;
-        this.renderer = null;
+        this["renderer"] = null;
         this.actionRefs = null;
         this.handlers=null;
         this.eventDispatcher = null;
@@ -799,16 +796,9 @@ Component.prototype.isRenderedAndValid = function() {
  * @export
  */
 Component.prototype.superRender = function() {
-    return this.getSuper()["render"]();
-};
-
-/**
- * Execute the super components rerender method.
- * @protected
- * @export
- */
-Component.prototype.superRerender = function() {
-    return this.getSuper()["rerender"]();
+    if (this.superComponent) {
+        return this.superComponent["render"]();
+    }
 };
 
 /**
@@ -817,7 +807,20 @@ Component.prototype.superRerender = function() {
  * @export
  */
 Component.prototype.superAfterRender = function() {
-    return this.getSuper()["afterRender"]();
+    if (this.superComponent) {
+        this.superComponent["afterRender"]();
+    }
+};
+
+/**
+ * Execute the super components rerender method.
+ * @protected
+ * @export
+ */
+Component.prototype.superRerender = function() {
+    if (this.superComponent) {
+        return this.superComponent["rerender"]();
+    }
 };
 
 /**
@@ -826,7 +829,9 @@ Component.prototype.superAfterRender = function() {
  * @export
  */
 Component.prototype.superUnrender = function() {
-    return this.getSuper()["unrender"]();
+    if (this.superComponent) {
+        this.superComponent["unrender"]();
+    }
 };
 
 /**
@@ -876,9 +881,10 @@ Component.prototype.setRendered = function(rendered) {
  * Returns the renderer instance for this component.
  *
  * @protected
+ * @export
  */
 Component.prototype.getRenderer = function() {
-    return this.renderer;
+    return this["renderer"];
 };
 
 /**
@@ -887,7 +893,7 @@ Component.prototype.getRenderer = function() {
  * @export
  */
 Component.prototype.getRenderable = function() {
-    return this.renderer.renderable;
+    return this["renderer"].renderable;
 };
 
 /**
@@ -1564,70 +1570,82 @@ Component.prototype.getFlavor = function() {
 };
 
 /**
- * Render logic is output as part of the component class.
- * This method is used when no render method was specified, thus bubbling up
- * to the super to do the logic till it reaches aura:component which does the heavy lifting.
+ * Invoke the render method defined on the component.
  * @export
  */
 Component.prototype.render = function() {
-    var superComponent = this.getSuper();
-    if(superComponent){
+    var render = this["renderer"] && this["renderer"]["render"];
+    if(render){
         var context=$A.getContext();
-        context.setCurrentAccess(superComponent);
-        var result=superComponent["render"]();
+        context.setCurrentAccess(this);
+        var result = render(this, this["helper"]);
         context.releaseCurrentAccess();
         return result;
+    } else {
+        return this.superRender();
     }
 };
 
 /**
- * Render logic is output as part of the component class.
- * This method is used when no rerender method was specified, thus bubbling up
- * to the super to do the logic till it reaches aura:component which does the heavy lifting.
- * @export
- */
-Component.prototype.rerender = function() {
-    var superComponent = this.getSuper();
-    if(superComponent){
-        var context=$A.getContext();
-        context.setCurrentAccess(superComponent);
-        var result=superComponent["rerender"]();
-        context.releaseCurrentAccess();
-        return result;
-    }
-};
-
-/**
- * Render logic is output as part of the component class.
- * This method is used when no afterRender method was specified, thus bubbling up
- * to the super to do the logic till it reaches aura:component which does the heavy lifting.
+ * Invoke the afterRender method defined on the component.
  * @export
  */
 Component.prototype.afterRender = function() {
-    var superComponent = this.getSuper();
-    if(superComponent){
+    var afterRender = this["renderer"] && this["renderer"]["afterRender"];
+    if(afterRender){
         var context=$A.getContext();
-        context.setCurrentAccess(superComponent);
-        var result=superComponent["afterRender"]();
+        context.setCurrentAccess(this);
+        afterRender(this, this["helper"]);
         context.releaseCurrentAccess();
-        return result;
+    } else {
+        this.superAfterRender();
     }
 };
 
+
 /**
- * Render logic is output as part of the component class.
- * This method is used when no unrender method was specified, thus bubbling up
- * to the super to do the logic till it reaches aura:component which does the heavy lifting.
+ * Invoke the rerender method defined on the component.
+ * @export
+ */
+Component.prototype.rerender = function() {
+    var rerender = this["renderer"] && this["renderer"]["rerender"];
+    if(rerender){
+        var context=$A.getContext();
+        context.setCurrentAccess(this);
+        var result = rerender(this, this["helper"]);
+        context.releaseCurrentAccess();
+        return result;
+     } else {
+        return this.superRerender();
+   }
+};
+
+/**
+ * Invoke the unrender method defined on the component.
  * @export
  */
 Component.prototype.unrender = function() {
-    var superComponent = this.getSuper();
-    if(superComponent){
+    var afterRender = this["renderer"] && this["renderer"]["unrender"];
+    if(afterRender){
         var context=$A.getContext();
-        context.setCurrentAccess(superComponent);
-        var result=superComponent["unrender"]();
+        context.setCurrentAccess(this);
+        afterRender(this, this["helper"]);
         context.releaseCurrentAccess();
-        return result;
+     } else {
+        // If a component extends the root component and doesn't implement it's own
+        // unrender function then we need to execute this default unrender.
+        if (this.isRootComponent) {
+            // TODO: iterate over components attributes and recursively unrender facets
+            var elements = this.getElements();
+            if(elements) {
+                while(elements.length){
+                    $A.util.removeElement(elements.pop());
+                }
+            }
+            this.disassociateElements();
+        }
+
+        this.superUnrender();
     }
 };
 
@@ -1648,7 +1666,7 @@ Component.prototype.getVersion = function() {
 
 /**
  * get version from context access stack
- * 
+ *
  * @private
  */
 Component.prototype.getVersionInternal = function() {
@@ -1678,7 +1696,7 @@ Component.prototype.setupValueProviders = function(customValueProviders) {
     vp["style"]=this.createStyleValueProvider();
     vp["super"]=this.superComponent;
     vp["null"]=null;
-    vp["version"] = this.getVersionInternal();
+    vp["version"] = this.version ? this.version : this.getVersionInternal();
 
     for (var key in customValueProviders) {
         this.addValueProvider(key,customValueProviders[key]);
@@ -1687,23 +1705,30 @@ Component.prototype.setupValueProviders = function(customValueProviders) {
 
 Component.prototype.createActionValueProvider = function() {
     var controllerDef = this.componentDef.getControllerDef();
-    if (controllerDef) {
+    if (controllerDef || this['controller']) {
         var cmp=this;
         var context = $A.getContext();
         context.setCurrentAccess(cmp);
         var returnObj = {
-            actions:{},
-            get : function(key) {
-                var ret = this.actions[key];
-                if (!ret) {
-                    var actionDef = controllerDef.getActionDef(key);
-                    $A.assert(actionDef,"Unknown controller action '"+key+"'");
+            actions: {},
+            get: function(key) {
+                var actionDef = this.actions[key];
+                if (!actionDef) {
+                    actionDef = cmp['controller'] && cmp['controller'][key];
                     if (actionDef) {
-                        ret = valueFactory.create(actionDef, null, cmp);
-                        this.actions[key] = ret;
+                        actionDef = new ActionDef({
+                            "descriptor": cmp.getName() + "$controller$" + key,
+                            "name": key,
+                            "actionType": "CLIENT",
+                            "code": actionDef
+                        });
+                    } else {
+                        actionDef = controllerDef.getActionDef(key);
                     }
+                    $A.assert(actionDef, "Unknown controller action '"+key+"'");
+                    this.actions[key] = actionDef;
                 }
-                return ret.getAction();
+                return actionDef.newInstance(cmp);
             }
         };
         context.releaseCurrentAccess();
@@ -1730,10 +1755,14 @@ Component.prototype.setupComponentDef = function(config) {
     var componentDef = $A.componentService.getDef(config["componentDef"]);
     $A.assert(componentDef, "componentDef is required");
     this.componentDef = componentDef;
+
+    if (config["original"]) { // We have to replace the abstractdef for the concrete one
+        this.replaceComponentClass(componentDef.getDescriptor().getQualifiedName());
+    }
 };
 
-Component.prototype.createComponentStack = function(facets,valueProvider,localCreation){
-    var facetStack={};
+Component.prototype.createComponentStack = function(facets, valueProvider){
+    var facetStack = {};
     for (var i = 0; i < facets.length; i++) {
         var facet = facets[i];
         var facetName = facet["descriptor"];
@@ -1746,25 +1775,34 @@ Component.prototype.createComponentStack = function(facets,valueProvider,localCr
         if (action) {
             action.pushCreationPath(facetName);
         }
-        var components=[];
+        var components = [];
         for (var index = 0; index < facetConfig.length; index++) {
             var config = facetConfig[index];
-
             if (config instanceof Component) {
                 components.push(config);
             } else if (config && config["componentDef"]) {
                 if (action) {
                     action.setCreationPathIndex(index);
                 }
+
                 $A.getContext().setCurrentAccess(valueProvider);
-                components.push($A.componentService["newComponentDeprecated"](config, (config["attributes"]&&config["attributes"]["valueProvider"])||valueProvider, localCreation, true));
+
+                var facetConfigAttr = { "values": {} };
+                var facetConfigClone = $A.util.apply({}, config);
+
+                if (facetConfigClone["attributes"]) {
+                    $A.util.apply(facetConfigAttr["values"], config["attributes"]["values"], true);
+                } else {
+                    facetConfigClone["attributes"] = {};
+                }
+
+                facetConfigAttr["valueProvider"] = (config["attributes"] && config["attributes"]["valueProvider"]) || valueProvider;
+                facetConfigClone["attributes"] = facetConfigAttr;
+
+                components.push($A.componentService.createComponentPriv(facetConfigClone));
                 $A.getContext().releaseCurrentAccess();
             } else {
-                // KRIS: HALO:
-                // This is hit, when you create a newComponentDeprecated and use raw values, vs configs on the attribute values.
-                // newComponentDeprecated("ui:button", {label: "Foo"});
-
-                // JBUCH: HALO: TODO: VERIFY THIS IS NEVER HIT
+                // KRIS: HALO: This is hit, when you create a newComponentDeprec and use raw values, vs configs on the attribute values.
                 throw new $A.auraError("Component.createComponentStack: invalid config. Expected component definition, found '"+config+"'.");
             }
         }
@@ -1777,23 +1815,24 @@ Component.prototype.createComponentStack = function(facets,valueProvider,localCr
 };
 
 
-Component.prototype.setupSuper = function(configAttributes, localCreation) {
+Component.prototype.setupSuper = function(configAttributes) {
     var superDef = this.componentDef.getSuperDef();
+
     if (superDef) {
-        var superConfig = {};
-        var superDefConfig = {};
-        superDefConfig["descriptor"] = superDef.getDescriptor();
-        superConfig["componentDef"] = superDefConfig;
+        var superConfig     = {};
+        var superAttributes = {};
+
+        superConfig["componentDef"] = { "descriptor" : superDef.getDescriptor().toString() };
         superConfig["concreteComponentId"] = this.concreteComponentId || this.globalId;
 
-        var superAttributes = {};
-        if(configAttributes) {
-            superAttributes["values"]={}; // configAttributes["values"]||{};
-            var facets=this.componentDef.getFacets();
-            if(facets) {
+        if (configAttributes) {
+            superAttributes["values"] = {};
+            var facets = this.componentDef.getFacets();
+
+            if (facets) {
                 for (var i = 0; i < facets.length; i++) {
-                    var facetDef=AttributeSet.getDef(facets[i]["descriptor"],this.componentDef);
-                    if(!$A.clientService.allowAccess(facetDef[0],facetDef[1])) {
+                    var facetDef = AttributeSet.getDef(facets[i]["descriptor"], this.componentDef);
+                    if (!$A.clientService.allowAccess(facetDef[0], facetDef[1])) {
                         // #if {"excludeModes" : ["PRODUCTION","AUTOTESTING"]}
                         $A.warning("Access Check Failed! Component.setupSuper():'" + facets[i]["descriptor"] + "' of component '" + this + "' is not visible to '" + $A.getContext().getCurrentAccess() + "'.");
                         // #end
@@ -1802,13 +1841,17 @@ Component.prototype.setupSuper = function(configAttributes, localCreation) {
                     superAttributes["values"][facets[i]["descriptor"]] = facets[i]["value"];
                 }
             }
+
             superAttributes["events"] = configAttributes["events"];
             superAttributes["valueProvider"] = configAttributes["facetValueProvider"];
         }
+
         superConfig["attributes"] = superAttributes;
+
         $A.pushCreationPath("super");
         $A.getContext().setCurrentAccess(this);
-        this.setSuperComponent($A.componentService["newComponentDeprecated"](superConfig, null, localCreation, true));
+
+        this.setSuperComponent($A.componentService.createComponentPriv(superConfig));
         $A.getContext().releaseCurrentAccess();
         $A.popCreationPath("super");
     }
@@ -1873,7 +1916,7 @@ Component.prototype.setupAttributes = function(cmp, config, localCreation) {
         var isFacet = attributeDef.getTypeDefDescriptor() === "aura://Aura.Component[]";
         var isDefRef = attributeDef.getTypeDefDescriptor() === "aura://Aura.ComponentDefRef[]";
 
-// JBUCH: HALO: TODO: WHY DO WE NEED/ALLOW THIS?
+        // JBUCH: HALO: TODO: WHY DO WE NEED/ALLOW THIS?
         if ($A.componentService.isConfigDescriptor(value)) {
             value = value["value"];
         }
@@ -1942,12 +1985,18 @@ Component.prototype.setupAttributes = function(cmp, config, localCreation) {
             var cdrs=[];
             for(var i=0;i<value.length;i++){
                 // make a shallow clone of the cdr with the proper value provider set
-                var cdr = {};
-                cdr["componentDef"] = value[i]["componentDef"];
-                cdr["localId"] = value[i]["localId"];
-                cdr["flavor"] = value[i]["flavor"];
-                cdr["attributes"] = value[i]["attributes"];
-                cdr["valueProvider"] = value[i]["valueProvider"] || config["valueProvider"];
+                var cdrObj = value[i];
+                var cdr = {"attributes": { "values": {} } };
+                cdr["componentDef"] = cdrObj["componentDef"];
+                cdr["localId"] = cdrObj["localId"];
+                cdr["flavor"] = cdrObj["flavor"];
+
+                if (cdrObj["attributes"]) {
+                    $A.util.apply(cdr["attributes"]["values"], cdrObj["attributes"]["values"]);
+                }
+
+                cdr["attributes"]["valueProvider"] = (cdrObj["attributes"] && cdrObj["attributes"]["valueProvider"]) || config["valueProvider"];
+
 //JBUCH: HALO: TODO: SOMETHING LIKE THIS TO FIX DEFERRED COMPDEFREFS?
 //                    for(var x in cdr["attributes"]["values"]){
 //                        cdr["attributes"]["values"][x] = valueFactory.create(cdr["attributes"]["values"][x], null, config["valueProvider"]);
@@ -2237,100 +2286,95 @@ Component.prototype.doDeIndex = function(cmp) {
     }
 };
 
-Component.prototype.injectComponent = function(config, cmp, localCreation) {
+Component.prototype.replaceComponentClass = function(descriptor) {
+    var classConstructor = $A.componentService.getComponentClass(descriptor);
 
-    var componentDef = this.componentDef;
-    if ((componentDef.isAbstract() || componentDef.getProviderDef()) && !this.concreteComponentId) {
-        var context=$A.getContext();
+    if (classConstructor && this["constructor"] !== classConstructor) {
+        // Doesn't do a whole lot, but good for debugging.
+        this["constructor"]   = classConstructor;
+
+        // Reassign important members. Assign to both external reference, and internal reference
+        this["controller"]    = classConstructor.prototype["controller"];
+        this["helper"]        = classConstructor.prototype["helper"];
+        this["renderer"]      = classConstructor.prototype["renderer"];
+        this["provider"]      = classConstructor.prototype["provider"];
+    }
+};
+
+Component.prototype.injectComponent = function(config, localCreation) {
+
+    if ((this.componentDef.isAbstract() || this["provider"]) && !this.concreteComponentId) {
+        var context = $A.getContext();
         var act = context.getCurrentAction();
         if (act) {
             // allow the provider to re-use the path of the current component without complaint
             act.reactivatePath();
         }
 
-        var self = this;
-        var setProvided = function(realComponentDef, attributes) {
-
-            $A.assert(realComponentDef instanceof ComponentDef,
-                    "No definition for provided component: " + componentDef);
-            $A.assert(!realComponentDef.isAbstract(),
-                    "Provided component cannot be abstract: " + realComponentDef);
-            $A.assert(!realComponentDef.hasRemoteDependencies() || (realComponentDef.hasRemoteDependencies() && self.partialConfig),
-                    "Client provided component cannot have server dependencies: " + realComponentDef);
-
-            // JBUCH: HALO: TODO: FIND BETTER WAY TO RESET THESE AFTER PROVIDER INJECTION
-            self.componentDef = realComponentDef;
-            self.attributeSet.merge(attributes, realComponentDef.getAttributeDefs());
-
-            // KRIS: IN THE MIDDLE OF THIS FOR PROVIDED COMPONENTS
-            var classConstructor =  $A.componentService.getComponentClass(realComponentDef.getDescriptor().getQualifiedName());
-            if (classConstructor && cmp["constructor"] !== classConstructor) {
-                // Doesn't do a whole lot, but good for debugging, not sure what the stack trace looks like.
-                cmp["constructor"] = classConstructor;
-
-                // Reassign important members. Assign to both external reference, and internal reference.
-                cmp["helper"] = classConstructor.prototype["helper"];
-                cmp["render"] = classConstructor.prototype["render"];
-                cmp["rerender"] = classConstructor.prototype["rerender"];
-                cmp["afterRender"] = classConstructor.prototype["afterRender"];
-                cmp["unrender"] = classConstructor.prototype["unrender"];
-            }
-
-            self.setupModel(config["model"],cmp);
-            self.valueProviders["m"]=self.model;
-            self.valueProviders["c"]=self.createActionValueProvider(cmp);
-        };
-
-        var providerDef = componentDef.getProviderDef();
-        if (providerDef) {
-            // use it
-            context.setCurrentAccess(cmp);
-            providerDef.provide(cmp, localCreation, setProvided);
+        if (this["provider"]) {
+            context.setCurrentAccess(this);
+            var providedConfig = this.provide(localCreation);
+            this.setProvided(providedConfig['componentDef'], providedConfig['attributes']);
             context.releaseCurrentAccess();
         } else {
-            var partialConfig = this.partialConfig;
-            $A.assert(partialConfig,
+            $A.assert(this.partialConfig,
                     "Abstract component without provider def cannot be instantiated : "
-                    + componentDef);
-            setProvided($A.componentService.getDef(partialConfig["componentDef"]), null);
+                    + this.componentDef);
+            this.setProvided($A.componentService.getDef(this.partialConfig["componentDef"]), null);
         }
+
+        this.setupModel(config["model"],this);
+        this.valueProviders["m"]=this.model;
+        this.valueProviders["c"]=this.createActionValueProvider(this);
     }
 };
 
-Component.prototype.setupRenderer = function(cmp) {
-    var rd = this.componentDef.getRenderingDetails();
-    $A.assert(rd !== undefined, "Instantiating " + this.componentDef.getDescriptor() + " which has no renderer");
-    var renderable = cmp;
-    for (var i = 0; i < rd.distance; i++) {
-        renderable = renderable.getSuper();
-    }
+/**
+ * Runs the provide method and returns the component definition.
+ * Throws an error if the provide method is not found.
+ * @param {Boolean} localCreation
+ */
+Component.prototype.provide = function(localCreation) {
+    var provideMethod = this["provider"] && this["provider"]["provide"];
+    $A.assert(provideMethod, "Provide method not found");
 
-    var renderer = {
-        def : rd.rendererDef,
-        renderable : renderable
-    };
+    var providedConfig = provideMethod(this, localCreation);
 
-    var superComponent = renderable.getSuper();
-    if (superComponent) {
-        var superRenderer = superComponent.getRenderer();
-        renderer["superRender"] = function() {
-            return superRenderer.def.render(superRenderer.renderable);
-        };
-
-        renderer["superRerender"] = function() {
-            return superRenderer.def.rerender(superRenderer.renderable);
-        };
-
-        renderer["superAfterRender"] = function() {
-            superRenderer.def.afterRender(superRenderer.renderable);
-        };
-
-        renderer["superUnrender"] = function() {
-            superRenderer.def.unrender(superRenderer.renderable);
+    // A provider can return a component name
+    if (!providedConfig || $A.util.isString(providedConfig)) {
+        providedConfig = {
+            'componentDef': providedConfig
         };
     }
 
-    this.renderer = renderer;
+    // A provider can return a config object
+    if (providedConfig['componentDef']) {
+        var def = $A.componentService.getDef(providedConfig['componentDef']);
+        // set available component def
+        providedConfig['componentDef'] = def;
+    } else {
+        // A provider can return only attributes, there is
+        // no component def provided so set to current component
+        providedConfig['componentDef'] = this.getDef();
+    }
+    return providedConfig;
+};
+
+Component.prototype.setProvided = function(realComponentDef, attributes) {
+
+    $A.assert(realComponentDef instanceof ComponentDef,
+            "No definition for provided component: " +this.componentDef);
+    $A.assert(!realComponentDef.isAbstract(),
+            "Provided component cannot be abstract: " + realComponentDef);
+    $A.assert(!realComponentDef.hasRemoteDependencies() || (realComponentDef.hasRemoteDependencies() && this.partialConfig),
+            "Client provided component cannot have server dependencies: " + realComponentDef);
+
+    // JBUCH: HALO: TODO: FIND BETTER WAY TO RESET THESE AFTER PROVIDER INJECTION
+    this.componentDef = realComponentDef;
+    this.attributeSet.merge(attributes, realComponentDef.getAttributeDefs());
+
+    // KRIS: IN THE MIDDLE OF THIS FOR PROVIDED COMPONENTS
+    this.replaceComponentClass(realComponentDef.getDescriptor().getQualifiedName());
 };
 
 Component.prototype.associateRenderedBy = function(cmp, element) {

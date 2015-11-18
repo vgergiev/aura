@@ -142,6 +142,10 @@ AuraClientService = function AuraClientService () {
     // token storage key should not be changed because external client may query independently
     this._tokenStorageKey = "$AuraClientService.token$";
 
+    // cookie name to force getApplication to the server (to skip cache). done as a cookie so the server
+    // can set this flag if ever required.
+    this._disableBootstrapCacheCookie = "auraDisableBootstrapCache";
+
     this.NOOP = function() {};
 
     Aura.Utils.Util.prototype.on(window, "load", function() {
@@ -351,26 +355,28 @@ AuraClientService.prototype.decode = function(response, noStrip) {
         ret["status"] = "ERROR";
         return ret;
     } else {
+        var i;
         // Prevent collision between $Label value provider and serRefId properties (typically "s" and "r").
         if (responseMessage["context"] && responseMessage["context"]["globalValueProviders"]) {
             var saved = [];
             var gvpList = responseMessage["context"]["globalValueProviders"];
 
             // Filter out providers without refs
-            for (var i = gvpList.length - 1; i >= 0; i--) {
+            for (i = gvpList.length - 1; i >= 0; i--) {
                 if (gvpList[i]["hasRefs"] !== true) {
                     saved.push(gvpList.splice(i, 1)[0]);
                 }
             }
 
-            $A.util.json.resolveRefs(responseMessage);
+            $A.util.json.resolveRefsObject(responseMessage);
 
             // Restore original provider (order doesn't matter)
             responseMessage["context"]["globalValueProviders"] = gvpList.concat(saved);
         } else {
-            $A.util.json.resolveRefs(responseMessage);
+            $A.util.json.resolveRefsObject(responseMessage);
         }
     }
+
     ret["status"] = "SUCCESS";
     ret["message"] = responseMessage;
     return ret;
@@ -628,9 +634,9 @@ AuraClientService.prototype.releaseXHR = function(auraXHR) {
 
 /**
  * Perform hard refresh
- * 
+ *
  * This is part of the appcache refresh, forcing a reload while
- * avoiding the appcache which is important for system such as 
+ * avoiding the appcache which is important for system such as
  * Android such doesn't adhere to window.location.reload(true)
  * and still uses appcache.
  *
@@ -721,7 +727,7 @@ AuraClientService.prototype.handleAppCache = function() {
         }
 
         // reload even if storage clear fails
-        $A.componentService.registry.clearStorage().then(
+        $A.componentService.clearDefsFromStorage().then(
             function() { window.location.reload(true); },
             function() { window.location.reload(true); }
         );
@@ -938,13 +944,10 @@ AuraClientService.prototype.init = function(config, token, container) {
             this._token = token;
         }
 
-        var component = $A.componentService["newComponentDeprecated"](config, null, false, true);
+        var component = $A.componentService.createComponentPriv(config);
         $A.getContext().setCurrentAccess(component);
-
-
         $A.renderingService.render(component, container || document.body);
         $A.renderingService.afterRender(component);
-
 
         return component;
 
@@ -981,22 +984,22 @@ AuraClientService.prototype.idle = function() {
 AuraClientService.prototype.initDefs = function(config) {
     var i;
 
-    var evtConfigs = $A.util.json.resolveRefs(config["eventDefs"]);
+    var evtConfigs = $A.util.json.resolveRefsArray(config["eventDefs"]);
     for (i = 0; i < evtConfigs.length; i++) {
         $A.eventService.saveEventConfig(evtConfigs[i]);
     }
 
-    var libraryConfigs = $A.util.json.resolveRefs(config["libraryDefs"]);
+    var libraryConfigs = $A.util.json.resolveRefsArray(config["libraryDefs"]);
     for (i = 0; i < libraryConfigs.length; i++) {
         $A.componentService.createLibraryDef(libraryConfigs[i]);
     }
 
-    var controllerConfigs = $A.util.json.resolveRefs(config["controllerDefs"]);
+    var controllerConfigs = $A.util.json.resolveRefsArray(config["controllerDefs"]);
     for (i = 0; i < controllerConfigs.length; i++) {
         $A.componentService.createControllerDef(controllerConfigs[i]);
     }
 
-    var comConfigs = $A.util.json.resolveRefs(config["componentDefs"]);
+    var comConfigs = $A.util.json.resolveRefsArray(config["componentDefs"]);
     for (i = 0; i < comConfigs.length; i++) {
         $A.componentService.saveComponentConfig(comConfigs[i]);
     }
@@ -1058,29 +1061,35 @@ AuraClientService.prototype.loadComponent = function(descriptor, attributes, cal
         function (value) {
             if (value && value.value["token"]) {
                 acs._token = value.value["token"];
+                $A.log("AuraClientService.loadComponent(): token found in storage");
+            } else {
+                $A.log("AuraClientService.loadComponent(): no token found in storage");
+                // on next reload force server trip to get new token
+                acs.disableBootstrapCacheOnNextLoad();
             }
         },
         function(err) {
-            $A.log("AuraClientService.loadComponent(): failed to load token: " + err);
+            $A.log("AuraClientService.loadComponent(): failed to load token from storage: " + err);
+            // on next reload force server trip to get new token
+            acs.disableBootstrapCacheOnNextLoad();
         }
     );
+
     this.runAfterInitDefs(function () {
         $A.run(function () {
-            var desc = new DefDescriptor(descriptor);
-            var tag = desc.getNamespace() + ":" + desc.getName();
-
+            var desc   = new DefDescriptor(descriptor);
+            var tag    = desc.getNamespace() + ":" + desc.getName();
             var method = defType === "APPLICATION" ? "getApplication" : "getComponent";
             var action = $A.get("c.aura://ComponentController." + method);
-
-            if(acs._useBootstrapCache) {
-                action.setStorable({
-                    "refresh": 0
-                });
+            if(acs.getUseBootstrapCache()) {
+                action.setStorable({ "refresh": 0 });
             } else {
-                action.setStorable({
-                    "ignoreExisting": true
-                });
+                action.setStorable({ "ignoreExisting": true });
             }
+
+            // we've respected the value so clear it
+            acs.clearDisableBootstrapCacheOnNextLoad();
+
             //
             // No, really, do not abort this. The setStorable above defaults this
             // to be abortable, but, even though nothing should ever trigger an action
@@ -1089,12 +1098,7 @@ AuraClientService.prototype.loadComponent = function(descriptor, attributes, cal
             //
             action.setAbortable(false);
 
-            action.setParams({
-                "name": tag,
-                "attributes": attributes,
-                "chainLoadLabels": true
-            });
-
+            action.setParams({ "name": tag, "attributes": attributes, "chainLoadLabels": true });
             //
             // we use stored and loaded here to track the various race conditions and prevent
             // them.
@@ -1105,8 +1109,8 @@ AuraClientService.prototype.loadComponent = function(descriptor, attributes, cal
             // * loaded truthy means we have initialized.
             //
             var stored = false;
-            var loaded = undefined;
             var storage = Action.prototype.getStorage();
+            var loaded;
 
             var failCallback = function (force, err) {
                 //
@@ -1148,7 +1152,6 @@ AuraClientService.prototype.loadComponent = function(descriptor, attributes, cal
                         } else {
                             var key = a.getStorageKey(),
                                 toStore = a.getStored();
-
                             var storeCallback = function() {
                                 $A.log("getApplication response changed. Firing aura:applicationRefreshed event");
                                 $A.getEvt("markup://aura:applicationRefreshed").fire();
@@ -1168,7 +1171,7 @@ AuraClientService.prototype.loadComponent = function(descriptor, attributes, cal
 
                     // Even if bootstrap cache is disabled we still want to load from cache
                     // if action fails as "INCOMPLETE" for offline launch
-                    if (!acs._useBootstrapCache && storage) {
+                    if (!acs.getUseBootstrapCache() && storage) {
                         var key = a.getStorageKey();
                         storage.get(key).then(
                             function(value) {
@@ -1257,6 +1260,15 @@ AuraClientService.prototype.popStack = function(name) {
 
     if (this.auraStack.length === 0) {
         this.auraStack.push("AuraClientService$popStack");
+        this.postProcess();
+    }
+};
+
+/*
+ * @private
+ */
+AuraClientService.prototype.postProcess = function() {
+    if (this.auraStack.length === 1 && this.auraStack[0] === "AuraClientService$popStack") {
         try {
             this.process();
         } catch (e) {
@@ -1521,13 +1533,16 @@ AuraClientService.prototype.finishCollection = function() {
     }
 };
 
+/**
+ * @private
+ */
 AuraClientService.prototype.shouldSendOutForegroundActions = function( foregroundActions, cabooseCount ) {
-	if(foregroundActions.length > cabooseCount ||
-		(cabooseCount > 0 && Date.now() - this.lastSendTime > 60000) ) {
-		return true;
-	} else {
-		return false;
-	}
+    if(foregroundActions.length > cabooseCount ||
+        (cabooseCount > 0 && Date.now() - this.lastSendTime > 60000) ) {
+        return true;
+    } else {
+        return false;
+    }
 };
 
 /**
@@ -2155,7 +2170,7 @@ AuraClientService.prototype.runActions = function(actions, scope, callback) {
  * @export
  */
 AuraClientService.prototype.injectComponent = function(rawConfig, locatorDomId, localId) {
-    var config = $A.util.json.resolveRefs(rawConfig);
+    var config = $A.util.json.resolveRefsObject(rawConfig);
 
     // Save off any context global stuff like new labels
     $A.getContext()['merge'](config["context"]);
@@ -2195,10 +2210,16 @@ AuraClientService.prototype.injectComponent = function(rawConfig, locatorDomId, 
             componentConfig = self.createIntegrationErrorConfig(errors);
         }
 
-        componentConfig["localId"] = localId;
-
         var root = $A.getRoot();
-        var c = $A.componentService["newComponentDeprecated"](componentConfig, root);
+
+        $A.util.apply(componentConfig, {
+            "localId" : localId,
+            "attributes" : {
+                "valueProvider" : root
+            }
+        }, null, true);
+
+        var c = $A.componentService.createComponentPriv(componentConfig);
 
         if (!errors) {
             // Wire up event handlers
@@ -2207,8 +2228,9 @@ AuraClientService.prototype.injectComponent = function(rawConfig, locatorDomId, 
 
         var body = root.get("v.body");
         body.push(c);
+
         // Do not let Aura consider this initial setting into the surrogate app as a candiadate for rerendering
-        root.set("v.body",body,true);
+        root.set("v.body", body, true);
 
         $A.render(c, element);
 
@@ -2232,6 +2254,7 @@ AuraClientService.prototype.createIntegrationErrorConfig = function(errorText) {
         },
 
         "attributes" : {
+            "valueProvider": $A.getRoot(),
             "values" : {
                 "title" : "Aura Integration Service Error",
                 "severity" : "error",
@@ -2280,7 +2303,7 @@ AuraClientService.prototype.renderInjection = function(component, locator, actio
         // create same messaging as injectComponent
         var errorConfig = this.createIntegrationErrorConfig(error);
         errorConfig["localId"] = component.getLocalId();
-        component = $A.componentService["newComponentDeprecated"](errorConfig, $A.getRoot());
+        component = $A.componentService.createComponentPriv(errorConfig);
     }
 
     this.addComponentHandlers(component, actionEventHandlers);
@@ -2520,11 +2543,11 @@ AuraClientService.prototype.revalidateAction = function(descriptor, params, call
 /**
  * Clears an action out of the action cache.
  *
- * @param descriptor {String} action descriptor.
- * @param params {Object} map of keys to parameter values.
- * @param successCallback {Function} called after the action was invalidated. Called with true if the action was
+ * @param {String} descriptor action descriptor.
+ * @param {Object} params map of keys to parameter values.
+ * @param {Function} successCallback called after the action was invalidated. Called with true if the action was
  * successfully invalidated and false if the action was invalid or was not found in the cache.
- * @param errorCallback {Function} called if an error occurred during execution
+ * @param {Function} errorCallback called if an error occurred during execution
  * @export
  */
 AuraClientService.prototype.invalidateAction = function(descriptor, params, successCallback, errorCallback) {
@@ -2610,27 +2633,85 @@ AuraClientService.prototype.allowAccess = function(definition, component) {
  * @export
  */
 AuraClientService.prototype.invalidSession = function(token) {
-    var refresh = function() {
+    var acs = this;
+
+    var refresh = function(disableBootstrapCache) {
+        if (disableBootstrapCache) {
+            acs.disableBootstrapCacheOnNextLoad();
+        }
         $A.clientService.hardRefresh();
     };
+
+    // if new token provided then persist to storage and reload. if persisting
+    // fails then we must go to the server for getApplication to get a new token.
     if (token && token["newToken"]) {
         this._token = token["newToken"];
-        this.saveTokenToStorage().then(refresh, refresh);
+        this.saveTokenToStorage().then(refresh.bind(null, false), refresh.bind(null, true));
     } else {
-        refresh();
+        // refresh (to get a new session id) and force getApplication to the server
+        // (to get a new csrf token).
+        refresh(true);
     }
 };
 
 /**
- * Set whether Aura should attempt to load the getApplication action from cache first
- * (useBootstrapCache = true) or if it should go to the server first (useBootstrapCache = false).
- *
- * The default behavior is to load getApplication from cache
- *
+ * Sets whether Aura should attempt to load the getApplication action from cache first.
+ * This must be called from a template's auraPreInitBlock. By default this is enabled.
+ * @param {Boolean} useBootstrapCache if true load getApplication action from cache first.
+ *  If false go to the server first (ignoring any existing cache).
  * @export
  */
 AuraClientService.prototype.setUseBootstrapCache = function(useBootstrapCache) {
     this._useBootstrapCache = useBootstrapCache;
 };
+
+/**
+ * Forces getApplication action to the server, skipping the cache, when the app
+ * is next loaded.
+ *
+ * Bootstrap cache is disabled when a valid csrf token is not available because the
+ * getApplication action is the only mechanism to get a new token.
+ *
+ * @private
+ */
+AuraClientService.prototype.disableBootstrapCacheOnNextLoad = function() {
+    // can only get a cache hit on getApplication with persistent storage
+    var storage = Action.prototype.getStorage();
+    if (storage && storage.isPersistent()) {
+        var expire = new Date(new Date().getTime() + 1000*60*60*24*7); // + 1 week
+        document.cookie = this._disableBootstrapCacheCookie + '=true; expires=' + expire.toUTCString();
+    }
+};
+
+/**
+ * Clears disabling of the bootstrap cache. See disableBootstrapCacheOnNextLoad.
+ * @private
+ */
+AuraClientService.prototype.clearDisableBootstrapCacheOnNextLoad = function() {
+    document.cookie = this._disableBootstrapCacheCookie + '=true; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+};
+
+/**
+ * Gets whether to check action cache for getApplication.
+ * @return {Boolean} true if the cache should be checked; false to skip the cache.
+ */
+AuraClientService.prototype.getUseBootstrapCache = function() {
+    if (!this._useBootstrapCache) {
+        return false;
+    }
+
+    // check for cookie indicating disablement
+    var cookies = '; ' + document.cookie;
+    var key = '; ' + this._disableBootstrapCacheCookie + '=';
+    var begin = cookies.indexOf(key);
+    if (begin === -1) {
+        return true;
+    }
+    var end = cookies.indexOf(';', begin + key.length);
+    var value = cookies.substring(begin + key.length, end);
+    // stored value is string true; see disableBootstrapCacheOnNextLoad()
+    return value !== 'true';
+};
+
 
 Aura.Services.AuraClientService = AuraClientService;

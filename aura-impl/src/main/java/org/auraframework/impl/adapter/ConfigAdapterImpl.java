@@ -15,36 +15,21 @@
  */
 package org.auraframework.impl.adapter;
 
-import java.io.File;
-import java.io.FileFilter;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.Reader;
-import java.io.StringReader;
+import java.io.*;
 import java.lang.reflect.Type;
 import java.net.MalformedURLException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.EnumSet;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
-import java.util.TimeZone;
+import java.util.*;
 
 import javax.servlet.http.HttpServletRequest;
 
 import org.apache.log4j.Logger;
 import org.auraframework.Aura;
-import org.auraframework.adapter.ConfigAdapter;
-import org.auraframework.adapter.ContentSecurityPolicy;
-import org.auraframework.adapter.DefaultContentSecurityPolicy;
+import org.auraframework.adapter.*;
+import org.auraframework.annotations.Annotations.ServiceComponent;
 import org.auraframework.def.BaseComponentDef;
 import org.auraframework.def.DefDescriptor;
-import org.auraframework.ds.serviceloader.AuraServiceProvider;
 import org.auraframework.expression.PropertyReference;
 import org.auraframework.impl.javascript.AuraJavascriptGroup;
 import org.auraframework.impl.source.AuraResourcesHashingGroup;
@@ -57,25 +42,16 @@ import org.auraframework.system.AuraContext.Mode;
 import org.auraframework.throwable.AuraError;
 import org.auraframework.throwable.AuraRuntimeException;
 import org.auraframework.throwable.quickfix.QuickFixException;
-import org.auraframework.util.AuraLocale;
-import org.auraframework.util.AuraTextUtil;
-import org.auraframework.util.IOUtil;
+import org.auraframework.util.*;
 import org.auraframework.util.javascript.JavascriptGroup;
-import org.auraframework.util.resource.CompiledGroup;
-import org.auraframework.util.resource.FileGroup;
-import org.auraframework.util.resource.ResourceLoader;
+import org.auraframework.util.resource.*;
 import org.auraframework.util.text.Hash;
 
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
+import com.google.common.collect.*;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 
-import aQute.bnd.annotation.component.Component;
-
-@Component (provide=AuraServiceProvider.class)
+@ServiceComponent
 public class ConfigAdapterImpl implements ConfigAdapter {
 
     private static final String TIMESTAMP_FORMAT_PROPERTY = "aura.build.timestamp.format";
@@ -104,6 +80,8 @@ public class ConfigAdapterImpl implements ConfigAdapter {
     private boolean lastGenerationHadCompilationErrors = false;
     private final boolean validateCss;
     private final Map<String, String> effectiveTimezones;
+
+    private LocalizationAdapter localizationAdapter = Aura.getLocalizationAdapter();
 
     public ConfigAdapterImpl() {
         this(getDefaultCacheDir());
@@ -267,7 +245,7 @@ public class ConfigAdapterImpl implements ConfigAdapter {
     }
 
     /**
-     * Determines whether to use normalize.css or resetCSS.css by looking at template attribute "normalizeCss"
+     * Determines whether to use normalize.css or resetCSS.css or nothing.
      *
      * @return URL to reset css file
      */
@@ -276,67 +254,59 @@ public class ConfigAdapterImpl implements ConfigAdapter {
         AuraContext context = Aura.getContextService().getCurrentContext();
         String contextPath = context.getContextPath();
         String uid = context.getFrameworkUID();
-        String resetCss = "resetCSS";
-
+        String resetCss = "resetCSS.css";
         try {
             DefDescriptor<?> appDesc = context.getApplicationDescriptor();
             if (appDesc != null) {
                 BaseComponentDef templateDef = ((BaseComponentDef) appDesc.getDef()).getTemplateDef();
                 if (templateDef.isTemplate()) {
                     BaseComponent<?, ?> template = (BaseComponent<?, ?>) Aura.getInstanceService().getInstance(templateDef);
-                    if (useNormalizeCss(template)) {
-                        resetCss = "normalize";
+                    String auraResetStyle=getTemplateValue(template,"auraResetStyle");
+                    switch(auraResetStyle){
+                        case "reset":
+                            resetCss="resetCSS.css";
+                            break;
+                        case "normalize":
+                            resetCss="normalize.css";
+                            break;
+                        default:
+                            return null;
                     }
                 }
             }
         } catch (QuickFixException qfe) {
+            resetCss+="?error";
             // ignore and use default resetCSS.css
         }
-
-        return String.format("%s/auraFW/resources/%s/aura/%s.css", contextPath, uid, resetCss);
+        return String.format("%s/auraFW/resources/%s/aura/%s", contextPath, uid, resetCss);
     }
 
     /**
-     * Whether the current template normalizeCss attribute value is true. The attribute value provider is its
-     * super is it extends another template.
+     * FIXME: HACK: DELETEME: W-2540157
      *
-     * @param template template component
-     * @return whether normalizeCss attribute is set to true
-     * @throws QuickFixException
+     * The evaluated value for attribute returns the default value (false) if current
+     * template does not <aura:set attribute="myAttribute" />. This is incorrect if
+     * the current template extends a template that has [attribute] set to true.
+     *
+     * This workaround recurses through PropertyReference values until a value provider template
+     * provides a set value or it reaches the base component which we will use the default value.
      */
-    private boolean useNormalizeCss(BaseComponent<?, ?> template) throws QuickFixException {
-        BaseComponent<?, ?> valueProviderTemplate = template;
-        boolean baseTemplate = true;
-        if (template.getSuper() != null && ((BaseComponentDef) template.getSuper().getDescriptor().getDef()).isTemplate()) {
-            // super template is the value provider for the attribute
-            // template only has the default value
-            valueProviderTemplate = template.getSuper();
-            baseTemplate = false;
+    private String getTemplateValue(BaseComponent<?, ?> template, String attribute) throws QuickFixException {
+        Object attributeValue;
+        if (template.getSuper() != null && template.getSuper().getDescriptor().getDef().isTemplate()) {
+            template = template.getSuper();
+            attributeValue=template.getAttributes().getRawValue(attribute);
+        }else{
+            attributeValue=template.getAttributes().getValue(attribute);
         }
-        /**
-         * TODO: W-2540157
-         *
-         * The evaluated value for attribute "normalizeCss" returns the default value (false) if current
-         * template does not <aura:set attribute="normalizeCss" /> itself. This is incorrect if
-         * the current template extends a template that has normalizeCss set to true.
-         *
-         * This workaround recurses through PropertyReference values until a value provider template
-         * provides a set value or it reaches the base component which we will use the default value.
-         */
-        Object normalizeCssValue;
-        if (baseTemplate) {
-            normalizeCssValue = valueProviderTemplate.getAttributes().getValue("normalizeCss");
-        } else {
-            normalizeCssValue = valueProviderTemplate.getAttributes().getRawValue("normalizeCss");
-        }
-        if (normalizeCssValue != null) {
-            if (normalizeCssValue instanceof PropertyReference) {
-                return useNormalizeCss(valueProviderTemplate);
+        if (attributeValue != null) {
+            if (attributeValue instanceof PropertyReference) {
+                return getTemplateValue(template,attribute);
             } else {
-                return (Boolean) normalizeCssValue;
+                return (String) attributeValue;
             }
         }
-        return false;
+        return "";
     }
 
     /**
@@ -345,7 +315,7 @@ public class ConfigAdapterImpl implements ConfigAdapter {
      */
     @Override
     public String getJSLibsURL() {
-        AuraLocale al = Aura.getLocalizationAdapter().getAuraLocale();
+        AuraLocale al = localizationAdapter.getAuraLocale();
         String tz = al.getTimeZone().getID();
         tz = getAvailableTimezone(tz);
         tz = tz.replace("/", "-");
@@ -646,5 +616,12 @@ public class ConfigAdapterImpl implements ConfigAdapter {
             }
         }
         return new DefaultContentSecurityPolicy(inlineStyle);
+    }
+
+    /**
+     * Injection override.
+     */
+    public void setLocalizationAdapter(LocalizationAdapter adapter) {
+        this.localizationAdapter = adapter;
     }
 }

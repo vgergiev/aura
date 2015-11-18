@@ -16,7 +16,6 @@
 package org.auraframework.test.util;
 
 import java.io.IOException;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -25,12 +24,10 @@ import java.util.concurrent.atomic.AtomicLong;
 import javax.annotation.Nullable;
 
 import org.auraframework.Aura;
-import org.auraframework.AuraConfiguration;
 import org.auraframework.def.BaseComponentDef;
 import org.auraframework.def.DefDescriptor;
 import org.auraframework.def.DefDescriptor.DefType;
 import org.auraframework.def.Definition;
-import org.auraframework.http.AuraTestFilter;
 import org.auraframework.test.source.StringSourceLoader;
 import org.auraframework.system.AuraContext;
 import org.auraframework.system.AuraContext.Authentication;
@@ -43,6 +40,7 @@ import org.auraframework.util.json.JsonEncoder;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 public class AuraTestingUtil {
@@ -195,19 +193,6 @@ public class AuraTestingUtil {
         if (cleanUpDds != null) {
             cleanUpDds.remove(descriptor);
         }
-    }
-
-    /**
-     * Clear cached defs from the system. When mocking a def, if the def has already been cached, as itself, or as part
-     * of a preloaded set, the mock will not be effective, so it's safer to clear any cached defs after setting up mocks
-     * but before executing a test. This relies on source change notifications to get the servlets to clear their
-     * caches.
-     *
-     * @param defs the Definitions to be cleared from any caches
-     * @throws InterruptedException
-     */
-    public static <T extends Definition> void clearCachedDefs(Collection<T> defs) {
-        AuraTestFilter.clearCachedDefs(defs);
     }
 
     private void markForCleanup(DefDescriptor<?> desc) {

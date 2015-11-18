@@ -311,37 +311,36 @@
     _createKeyboardTraversalItemsSection: function (cmp) {
         var self = this;
         return {
+            visited : false,
             increment: function () {
                 var resultSection = this;
-                this.highlightedIndex++;
-                if (this.originalIndex !== this.highlightedIndex) { //avoid infinite looping
+                if (!this.visited || this.highlightedIndex+1 <= this.originalIndex ) { //avoid infinite looping
+                    this.highlightedIndex++;
                     if (this.highlightedIndex >= this.iters.length) {
                         this.highlightedIndex = -1;
+                        this.visited = true;
                         resultSection = this.next.incrementedTo();
                     } else if (!this.iters[this.highlightedIndex].get("v.visible")) {
                         resultSection = this.incrementedTo();
                     }
-                } else {
-                    resultSection = this.next.incrementedTo();
                 }
                 return resultSection;
             },
 
             decrement: function () {
                 var resultSection = this;
-                if (this.highlightedIndex === -1) {
-                    this.highlightedIndex = this.iters.length;
-                }
-                this.highlightedIndex--;
-                if (this.originalIndex !== this.highlightedIndex) { //avoid infinite looping
+                if (!this.visited || this.highlightedIndex-1 >= this.originalIndex ) { //avoid infinite looping
+                    if (this.highlightedIndex === -1) {
+                        this.highlightedIndex = this.iters.length;
+                    }
+                    this.highlightedIndex--;
                     if (this.highlightedIndex < 0) {
                         this.highlightedIndex = -1;
+                        this.visited = true;
                         resultSection = this.previous.decrementedTo();
                     } else if (!this.iters[this.highlightedIndex].get("v.visible")) {
                         resultSection = this.decrementedTo();
                     }
-                } else {
-                    resultSection = this.previous.decrementedTo();
                 }
                 return resultSection;
             },
@@ -585,7 +584,30 @@
             $A.util.toggleClass(list, "invisible", !visible);
         }
     },
-
+    
+    setDefaultHighlight: function(component) {
+    	var setDefaultHighlight = component.get("v.setDefaultHighlight");
+    	var visible = component.get("v.visible");
+    	if (setDefaultHighlight !== true || visible !== true) {
+    		return; 
+    	}
+    	var iterCmp = component.find("iter");
+    	if (iterCmp) {
+    		var iters = iterCmp.get("v.body");
+    		var found = false;
+    	    for (var i = 0; i < iters.length; i++) {
+                var optionCmp = iters[i];
+                if (found === false && optionCmp.get("v.visible") === true) {
+                    optionCmp.set("v.highlighted", true);
+                    this.updateAriaAttributes(component, optionCmp);
+                    found = true;
+                } else {
+                	optionCmp.set("v.highlighted", false);
+                }
+            }
+    	}
+    },
+    
     setUpEvents: function (component) {
         if (component.isRendered()) {
             var obj = {};
@@ -610,7 +632,9 @@
 
                 //push this even to the end of the queue to ensure that the interation in the component body is complete
                 window.setTimeout($A.getCallback(function () {
-                    component.get("e.listExpand").fire();
+                    if (component.isValid()) {
+                        component.get("e.listExpand").fire();
+                    }
                 }, 0));
 
             }

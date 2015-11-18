@@ -33,9 +33,7 @@ Aura.Flavors    = {};
 Aura.Value      = {};
 Aura.Model      = {};
 Aura.Component  = {};
-Aura.Renderer   = {};
 Aura.Provider   = {};
-Aura.Helper     = {};
 Aura.Library    = {};
 Aura.Event      = {};
 Aura.Layouts    = {};
@@ -91,30 +89,24 @@ window['$A'] = {};
 // -- Value -------------------------------------------------------------
 // #include aura.value.PropertyReferenceValue
 // #include aura.value.FunctionCallValue
-// #include aura.value.ActionReferenceValue
 // #include aura.value.PassthroughValue
 // #include aura.value.ValueFactory
 // #include aura.value.ExpressionFunctions
 
 // -- Model -------------------------------------------------------------
-// #include aura.model.ModelDefRegistry
 // #include aura.model.ValueDef
 // #include aura.model.ModelDef
 // #include aura.model.Model
 
 // -- Component ---------------------------------------------------------
-// #include aura.component.ComponentDefRegistry
+// #include aura.component.ComponentDefStorage
 // #include aura.component.Component
 // #include aura.component.InvalidComponent
 // #include aura.component.ComponentDef
 
 // -- Renderer ----------------------------------------------------------
-// #include aura.renderer.RendererDef
-// #include aura.renderer.RendererDefRegistry
 
 // -- Provider ----------------------------------------------------------
-// #include aura.provider.ProviderDef
-// #include aura.provider.ProviderDefRegistry
 // #include aura.provider.GlobalValueProviders
 // #include aura.provider.LabelQueue
 // #include aura.provider.LabelValueProvider
@@ -122,14 +114,11 @@ window['$A'] = {};
 // #include aura.provider.ContextValueProvider
 
 // -- Helper -------------------------------------------------------------
-// #include aura.helper.HelperDefRegistry
-// #include aura.helper.HelperDef
 
 // -- Library ------------------------------------------------------------
 // #include aura.library.LibraryDefRegistry
 
 // -- Event --------------------------------------------------------------
-// #include aura.event.EventDefRegistry
 // #include aura.event.EventDef
 // #include aura.event.Event
 
@@ -137,8 +126,6 @@ window['$A'] = {};
 // #include aura.controller.ActionDef
 // #include aura.controller.Action
 // #include aura.controller.ControllerDef
-// #include aura.controller.ControllerDefRegistry
-// #include aura.controller.ActionDefRegistry
 
 // -- Attribute ----------------------------------------------------------
 // #include aura.attribute.AttributeDef
@@ -160,7 +147,6 @@ window['$A'] = {};
 // #include aura.AuraClientService
 // #include aura.AuraComponentContext
 // #include aura.AuraComponentService
-// #include aura.AuraSerializationService
 // #include aura.AuraRenderingService
 // #include aura.AuraExpressionService
 // #include aura.AuraHistoryService
@@ -221,10 +207,8 @@ function AuraInstance () {
      * @platform
      */
     this.localizationService  = new Aura.Services.AuraLocalizationService();
-
     this.clientService        = new Aura.Services.AuraClientService();
     this.componentService     = new Aura.Services.AuraComponentService();
-    this.serializationService = new Aura.Services.AuraSerializationService();
     this.renderingService     = new Aura.Services.AuraRenderingService();
     this.expressionService    = new Aura.Services.AuraExpressionService();
     this.historyService       = new Aura.Services.AuraHistoryService();
@@ -358,23 +342,28 @@ function AuraInstance () {
 
 
     // Doced at the source by the @borrows statements on the Aura class
-    this.enqueueAction = this.clientService.enqueueAction.bind(this.clientService);
-    this.deferAction = this.clientService.deferAction.bind(this.clientService);
-    this.render = this.renderingService.render.bind(this.renderingService);
-    this.rerender = this.renderingService.rerender.bind(this.renderingService);
-    this.unrender = this.renderingService.unrender.bind(this.renderingService);
-    this.afterRender = this.renderingService.afterRender.bind(this.renderingService);
-    this.getCmp = this.componentService.get.bind(this.componentService);
-    this.getComponent = this.componentService.getComponent.bind(this.componentService);
-    this.createComponent = this.componentService["createComponent"].bind(this.componentService);
-    this.createComponents = this.componentService["createComponents"].bind(this.componentService);
-    this.newCmp = this.componentService["newComponentDeprecated"].bind(this.componentService);
-    this.newCmpDeprecated = this.componentService["newComponentDeprecated"].bind(this.componentService);
-    this.newCmpAsync = this.componentService["newComponentAsync"].bind(this.componentService);
-    this.getEvt = this.eventService.newEvent.bind(this.eventService);
-    this.Component = Component;
-    this.getCurrentTransactionId = this.clientService.getCurrentTransactionId.bind(this.clientService);
-    this.setCurrentTransactionId = this.clientService.setCurrentTransactionId.bind(this.clientService);
+    this.Component                 = Component;
+
+    this.enqueueAction             = this.clientService.enqueueAction.bind(this.clientService);
+    this.deferAction               = this.clientService.deferAction.bind(this.clientService);
+    this.getCurrentTransactionId   = this.clientService.getCurrentTransactionId.bind(this.clientService);
+    this.setCurrentTransactionId   = this.clientService.setCurrentTransactionId.bind(this.clientService);
+
+    this.render                    = this.renderingService.render.bind(this.renderingService);
+    this.rerender                  = this.renderingService.rerender.bind(this.renderingService);
+    this.unrender                  = this.renderingService.unrender.bind(this.renderingService);
+    this.afterRender               = this.renderingService.afterRender.bind(this.renderingService);
+
+    this.getCmp                    = this.componentService.get.bind(this.componentService);
+    this.getComponent              = this.componentService.getComponent.bind(this.componentService);
+    this.createComponent           = this.componentService["createComponent"].bind(this.componentService);
+    this.createComponents          = this.componentService["createComponents"].bind(this.componentService);
+    this.newCmp                    = this.componentService["newComponentDeprecated"].bind(this.componentService);
+    this.newCmpDeprecated          = this.componentService["newComponentDeprecated"].bind(this.componentService);
+    this.newCmpAsync               = this.componentService["newComponentAsync"].bind(this.componentService);
+
+    this.createComponentFromConfig = this.componentService.createComponentFromConfig.bind(this.componentService);
+    this.getEvt                    = this.eventService.newEvent.bind(this.eventService);
 
     /**
      * Pushes current portion of attribute's creationPath onto stack
@@ -436,7 +425,6 @@ function AuraInstance () {
     this["setCurrentTransactionId"] = this.setCurrentTransactionId;
     this["clientService"] = this.clientService;
     this["componentService"] = this.componentService;
-    this["serializationService"] = this.serializationService;
     this["renderingService"] = this.renderingService;
     this["expressionService"] = this.expressionService;
     this["historyService"] = this.historyService;
@@ -466,6 +454,7 @@ function AuraInstance () {
         //#end
     this["createComponent"] = this.createComponent;
     this["createComponents"] = this.createComponents;
+    this["createComponentFromConfig"] = this.createComponentFromConfig;
     this["newCmp"] = this.newCmp;
     this["newCmpDeprecated"] = this.newCmpDeprecated;
     this["newCmpAsync"] = this.newCmpAsync;
@@ -474,7 +463,7 @@ function AuraInstance () {
 
     this["auraError"] = this.auraError;
     this["auraFriendlyError"] = this.auraFriendlyError;
-    this["hasDefinition"] = this.hasDefinition; 
+    this["hasDefinition"] = this.hasDefinition;
     this["getDefinition"] = this.getDefinition;
     this["getDefinitions"] = this.getDefinitions;
 
@@ -531,20 +520,16 @@ function AuraInstance () {
  */
 AuraInstance.prototype.initAsync = function(config) {
 
-    //
-    // we don't handle components that come back here. This is used in the case where there
-    // are none.
-    //
+    // Context is created async because of the GVPs go though async storage checks
     $A.context = new Aura.Context.AuraContext(config["context"], function(context) {
-        // This juicy tidbit is for the sync version.
+
         $A.context = context;
         $A.clientService.initHost(config["host"]);
         $A.setLanguage();
+
         $A.metricsService.initialize();
-        $A.clientService.loadComponent(config["descriptor"], config["attributes"], function(resp) {
-            $A.metricsService.bootstrapMark("metadataReady");
-            $A.initPriv(resp);
-        }, config["deftype"]);
+
+        $A.clientService.loadComponent(config["descriptor"], config["attributes"], $A.initPriv, config["deftype"]);
     });
 };
 
@@ -567,14 +552,14 @@ AuraInstance.prototype.setLanguage = function() {
  * 	 it should. Defaults to true for Aura Integration Service.
  */
 AuraInstance.prototype.initConfig = function(config, useExisting, doNotInitializeServices) {
-    config = $A.util.json.resolveRefs(config);
+    config = $A.util.json.resolveRefsObject(config);
 
     if (!useExisting || $A.util.isUndefined($A.getContext())) {
         $A.clientService.initHost(config["host"], config["sid"]);
         // creating context.
         $A.context = new Aura.Context.AuraContext(config["context"]);
         $A.setLanguage();
-        this.initPriv($A.util.json.resolveRefs(config["instance"]), config["token"], null, doNotInitializeServices);
+        this.initPriv(config["instance"], config["token"], null, doNotInitializeServices);
         $A.context.finishComponentConfigs($A.context.getCurrentAction().getId());
         $A.context.setCurrentAction(null);
     } else {
@@ -596,30 +581,32 @@ AuraInstance.prototype.initConfig = function(config, useExisting, doNotInitializ
  * @private
  */
 AuraInstance.prototype.initPriv = function(config, token, container, doNotInitializeServices) {
+    $A.metricsService.bootstrapMark("metadataReady"); // we have loaded the app tree from the server
+
     if (!$A["hasErrors"]) {
-        var cmp = $A.clientService["init"](config, token, container ? $A.util.getElement(container) : null);
-        $A.setRoot(cmp);
+        var app = $A.clientService["init"](config, token, $A.util.getElement(container));
+        $A.setRoot(app);
 
         if (!$A.initialized) {
             // restore component definitions from AuraStorage into memory
-            $A.componentService.registry.restoreAllFromStorage();
+            $A.componentService.restoreDefsFromStorage();
 
             // add default handler to aura:systemError event
             $A.eventService.addHandler({
                 'event': 'aura:systemError',
-                'globalId': cmp.getGlobalId(),
+                'globalId': app.getGlobalId(),
                 'handler': function(event) {
                     if (event["handled"]) {
                         return;
                     }
 
                     $A.message(event.getParam("message"));
-
                     event["handled"] = true;
                  }});
 
             $A.initialized = true;
         }
+
         $A.finishInit();
 
         // After App initialization is done
@@ -655,6 +642,7 @@ AuraInstance.prototype.finishInit = function() {
  * @param {String} msg The error message to be displayed to the user.
  * @param {Error} [e] The error object to be displayed to the user.
  * @platform
+ * @deprecated throw new Error(msg) instead
  */
 AuraInstance.prototype.error = function(msg, e){
     this.logger.error(msg, e);
@@ -972,18 +960,6 @@ AuraInstance.prototype.log = function(value, error) {
 };
 
 /**
- *  Logs to the browser's JavaScript console if it is available.
- *  This method doesn't log in PROD or PRODDEBUG modes.
- */
-AuraInstance.prototype.logf = function() {
-    //#if {"excludeModes" : ["PRODUCTION", "PRODUCTIONDEBUG"]}
-    if (window["console"]) {
-        window["console"]["log"].apply(window["console"], arguments);
-    }
-    //#end
-};
-
-/**
  * Logs a stack trace. Trace calls using <code>console.trace()</code> if defined on the console implementation.
  * @public
  */
@@ -1041,9 +1017,9 @@ AuraInstance.prototype.addValueProvider=function(type,valueProvider){
 
 /**
  * Gets the event or component definition. If it is not currently on the client, we will access the server to attempt to retrieve it.
- * 
+ *
  * @public
- * 
+ *
  * @param  {String}   descriptor Descriptor in the pattern prefix:name or markup://prefix:name. Use e.prefix:name, or markup://e.prefix:name for an event definition.
  * @param  {Function} callback   Function whos first parameter is the requested definition if it exists. Otherwise the first parameter is null.
  * @return undefined
@@ -1088,15 +1064,17 @@ AuraInstance.prototype.getDefinitions = function(descriptors, callback) {
         if(def) {
             returnDefinitions[c] = def;
         } else {
-            // Detect without access checks to see if 
-            if((isEvent && !this.eventService.hasDefinition(descriptor)) || (!isEvent && !this.componentService.getComponentDef(descriptor))) {
+            // Detect without access checks to see if
+            if((isEvent && !this.eventService.hasDefinition(descriptor)) ||
+                    (!isEvent && !this.componentService.getComponentDef(this.componentService.createDescriptorConfig(descriptor)))) {
+
                 requestDefinitions.push(descriptors[c]);
                 pendingMap[descriptor] = {
                     "position": c,
                     "isEvent": isEvent
                 };
             } else {
-                returnDefinitions[c] = null;                
+                returnDefinitions[c] = null;
             }
         }
     }
@@ -1118,9 +1096,9 @@ AuraInstance.prototype.getDefinitions = function(descriptors, callback) {
                 if(pendingMap.hasOwnProperty(requestedDescriptor)) {
                     pendingInfo = pendingMap[requestedDescriptor];
                     if(pendingInfo["isEvent"]) {
-                        returnDefinitions[pendingInfo["position"]] = this.eventService.getEventDef(requestedDescriptor);
+                        returnDefinitions[pendingInfo["position"]] = this.eventService.getEventDef(requestedDescriptor) || null;
                     } else {
-                        returnDefinitions[pendingInfo["position"]] = this.componentService.getDef(requestedDescriptor);
+                        returnDefinitions[pendingInfo["position"]] = this.componentService.getDef(requestedDescriptor) || null;
                     }
                 }
             }
@@ -1139,9 +1117,9 @@ AuraInstance.prototype.getDefinitions = function(descriptors, callback) {
  */
 AuraInstance.prototype.hasDefinition = function(descriptor) {
     $A.assert($A.util.isString(descriptor), "'descriptor' must be an event or component descriptor such as 'prefix:name' or 'e.prefix:name'.");
-    
+
     if(descriptor.indexOf("e.") !== -1) {
-        return this.eventService.hasDefinition(descriptor);
+        return this.eventService.hasDefinition(descriptor.replace("e.", ""));
     }
     return this.componentService.hasDefinition(descriptor);
 };
@@ -1168,6 +1146,7 @@ AuraInstance.prototype.Perf = window['Perf'] || PerfShim;
      * @borrows AuraComponentService#getComponent as $A.getComponent
      * @borrows AuraClientService#enqueueAction as $A.enqueueAction
      * @borrows AuraInstance#getRoot as $A.getRoot
+     * @borrows AuraInstance#getCallback as $A.getCallback
      * @borrows AuraInstance#get as $A.get
      * @borrows AuraInstance#set as $A.set
      * @borrows AuraInstance#error as $A.error

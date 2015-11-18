@@ -27,10 +27,12 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 
 import org.auraframework.Aura;
 import org.auraframework.builder.BaseComponentDefBuilder;
+import org.auraframework.def.ActionDef;
 import org.auraframework.def.AttributeDef;
 import org.auraframework.def.AttributeDefRef;
 import org.auraframework.def.BaseComponentDef;
@@ -67,20 +69,15 @@ import org.auraframework.impl.system.DefDescriptorImpl;
 import org.auraframework.impl.util.AuraUtil;
 import org.auraframework.instance.AuraValueProviderType;
 import org.auraframework.instance.GlobalValueProvider;
+import org.auraframework.service.DefinitionService;
 import org.auraframework.system.AuraContext;
 import org.auraframework.system.MasterDefRegistry;
 import org.auraframework.throwable.AuraUnhandledException;
-import org.auraframework.throwable.quickfix.DefinitionNotFoundException;
-import org.auraframework.throwable.quickfix.FlavorNameNotFoundException;
-import org.auraframework.throwable.quickfix.InvalidDefinitionException;
-import org.auraframework.throwable.quickfix.InvalidExpressionException;
-import org.auraframework.throwable.quickfix.QuickFixException;
+import org.auraframework.throwable.quickfix.*;
 import org.auraframework.util.json.Json;
 
 import com.google.common.base.Splitter;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
+import com.google.common.collect.*;
 
 public abstract class BaseComponentDefImpl<T extends BaseComponentDef> extends
 RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
@@ -101,7 +98,6 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
     private final List<DefDescriptor<RendererDef>> rendererDescriptors;
     private final List<DefDescriptor<HelperDef>> helperDescriptors;
     private final List<DefDescriptor<ResourceDef>> resourceDescriptors;
-    private final DefDescriptor<ControllerDef> compoundControllerDescriptor;
     private final DefDescriptor<DesignDef> designDefDescriptor;
     private final DefDescriptor<SVGDef> svgDefDescriptor;
 
@@ -176,12 +172,7 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
         this.dynamicallyFlavorable = builder.dynamicallyFlavorable;
 
         this.expressionRefs = AuraUtil.immutableSet(builder.expressionRefs);
-        if (getDescriptor() != null) {
-            this.compoundControllerDescriptor = DefDescriptorImpl.getAssociateDescriptor(getDescriptor(),
-                    ControllerDef.class, DefDescriptor.COMPOUND_PREFIX);
-        } else {
-            this.compoundControllerDescriptor = null;
-        }
+
         this.hashCode = AuraUtil.hashCode(super.hashCode(), events, controllerDescriptors, modelDefDescriptor,
                 extendsDescriptor, interfaces, methodDefs, rendererDescriptors, helperDescriptors, resourceDescriptors,
                 imports);
@@ -206,15 +197,6 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
                         "Cannot define an attribute and register an event with the same name: %s", att.getName()),
                         getLocation());
             }
-        }
-
-        MasterDefRegistry mdr = Aura.getDefinitionService().getDefRegistry();
-        if (modelDefDescriptor != null) {
-            mdr.assertAccess(this.descriptor, modelDefDescriptor.getDef());
-        }
-
-        for (DefDescriptor<ControllerDef> d : controllerDescriptors) {
-            mdr.assertAccess(this.descriptor, d.getDef());
         }
 
         for (AttributeDefRef facet : this.facets) {
@@ -352,12 +334,38 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
         }
     }
 
+    private <X extends Definition> void checkAccess(DefDescriptor<X> descToCheck, MasterDefRegistry mdr)
+            throws QuickFixException {
+        // We should be able to do this, but tests are dependent on overrides here.
+        //X definition = mdr.getDef(descToCheck);
+        X definition = descToCheck.getDef();
+        if (definition == null) {
+            throw new DefinitionNotFoundException(descToCheck, getLocation());
+        }
+        mdr.assertAccess(descriptor, definition);
+    }
+
     @SuppressWarnings("unchecked")
     @Override
     public void validateReferences() throws QuickFixException {
+        DefinitionService definitionService = Aura.getDefinitionService();
+        MasterDefRegistry mdr = definitionService.getDefRegistry();
+
         super.validateReferences();
         for (DependencyDef def : dependencies) {
             def.validateReferences();
+        }
+
+        for (DefDescriptor<InterfaceDef> intf : interfaces) {
+            checkAccess(intf, mdr);
+        }
+
+        if (modelDefDescriptor != null) {
+            checkAccess(modelDefDescriptor, mdr);
+        }
+
+        for (DefDescriptor<ControllerDef> d : controllerDescriptors) {
+            checkAccess(d, mdr);
         }
 
         for (AttributeDef att : this.attributeDefs.values()) {
@@ -386,6 +394,7 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
         }
 
         if (templateDefDescriptor != null) {
+            // FIXME: this should be mdr.getDef(templateDefDescriptor);
             BaseComponentDef template = templateDefDescriptor.getDef();
             if (!template.isTemplate()) {
                 throw new InvalidDefinitionException(String.format(
@@ -397,7 +406,6 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
             }
         }
 
-        MasterDefRegistry registry = Aura.getDefinitionService().getDefRegistry();
         if (extendsDescriptor != null) {
             T parentDef = extendsDescriptor.getDef();
 
@@ -433,7 +441,7 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
                         extendsDescriptor), getLocation());
             }
 
-            registry.assertAccess(descriptor, parentDef);
+            mdr.assertAccess(descriptor, parentDef);
 
             SupportLevel support = getSupport();
             DefDescriptor<T> extDesc = extendsDescriptor;
@@ -448,15 +456,6 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
 
                 extDesc = (DefDescriptor<T>) extDef.getExtendsDescriptor();
             }
-        }
-
-        for (DefDescriptor<InterfaceDef> intf : interfaces) {
-            InterfaceDef interfaceDef = Aura.getDefinitionService().getDefinition(intf);
-            if (interfaceDef == null) {
-                throw new DefinitionNotFoundException(intf, getLocation());
-            }
-
-            registry.assertAccess(descriptor, interfaceDef);
         }
 
         for (RegisterEventDef def : events.values()) {
@@ -477,7 +476,7 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
 
         for (ClientLibraryDef def : this.clientLibraries) {
             def.validateReferences();
-            registry.assertAccess(descriptor, def);
+            mdr.assertAccess(descriptor, def);
         }
 
         if (defaultFlavor != null) {
@@ -612,7 +611,7 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
             dependencies.add(svgDefDescriptor);
         }
 
-        if (imports != null) {
+        if (imports != null && !imports.isEmpty()) {
             for (ImportDef imported : imports) {
                 dependencies.add(imported.getDescriptor());
             }
@@ -699,7 +698,7 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
      * @throws QuickFixException
      */
     @Override
-    public Collection<ImportDef> getImportDefs() throws QuickFixException {
+    public List<ImportDef> getImportDefs() throws QuickFixException {
         return imports;
     }
 
@@ -775,31 +774,50 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
     public List<DefDescriptor<ControllerDef>> getControllerDefDescriptors() throws QuickFixException {
         List<DefDescriptor<ControllerDef>> ret;
         if (extendsDescriptor != null) {
-            ret = new ArrayList<>();
-            ret.addAll(this.controllerDescriptors);
-            ret.addAll(getSuperDef().getControllerDefDescriptors());
-        } else {
-            ret = this.controllerDescriptors;
+	        ret = new ArrayList<>();
+	        ret.addAll(this.controllerDescriptors);
+	        ret.addAll(getSuperDef().getControllerDefDescriptors());
+	    } else {
+	        ret = this.controllerDescriptors;
+        }
+        return ret;
+	}
+    
+    @Override
+    public List<ControllerDef> getLocalControllerDefs() throws QuickFixException {
+        List<ControllerDef> ret = new ArrayList<>();
+        for (DefDescriptor<ControllerDef> desc : controllerDescriptors) {
+        	ControllerDef def = desc.getDef();
+            if (def.isLocal()) {
+            	ret.add(def);
+            }
+        }
+        if (extendsDescriptor != null) {
+            ret.addAll(getSuperDef().getLocalControllerDefs());
         }
         return ret;
     }
-
+            
     @Override
-    public ControllerDef getControllerDef() throws QuickFixException {
-        if (this.controllerDescriptors.isEmpty()) {
-            if (this.extendsDescriptor != null) {
-                return getSuperDef().getControllerDef();
-            } else {
-                return null;
+    public ControllerDef getLocalControllerDef() throws QuickFixException {
+        for (DefDescriptor<ControllerDef> desc : controllerDescriptors) {
+        	ControllerDef def = desc.getDef();
+            if (def.isLocal()) {
+                return def;
             }
-        } else {
-            return compoundControllerDescriptor.getDef();
         }
+        return null;
     }
 
     @Override
-    public ControllerDef getDeclaredControllerDef() throws QuickFixException {
-        return !this.controllerDescriptors.isEmpty() && compoundControllerDescriptor != null ? compoundControllerDescriptor.getDef() : null;
+    public ControllerDef getRemoteControllerDef() throws QuickFixException {
+        for (DefDescriptor<ControllerDef> desc : controllerDescriptors) {
+        	ControllerDef def = desc.getDef();
+            if (!def.isLocal()) {
+                return def;
+            }
+        }
+        return null;
     }
 
     @Override
@@ -965,33 +983,42 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
             boolean preloaded = context.isPreloaded(getDescriptor());
             boolean preloading = context.isPreloading();
             if (preloaded) {
-                json.writeValue(descriptor);
+            	json.writeMapBegin();
+                json.writeMapEntry("descriptor", descriptor);
+                json.writeMapEnd();
             } else {
                 json.writeMapBegin();
                 json.writeValue(getAccess());
                 json.writeMapEntry("descriptor", descriptor);
-                /*
-                context.pushCallingDescriptor(descriptor);
-                try {
-                    RendererDef rendererDef = getRendererDef();
-                    if (rendererDef != null && !rendererDef.isLocal()) {
-                        json.writeMapEntry("rendererDef", rendererDef);
-                    }
-                } finally {
-                    context.popCallingDescriptor();
-                }
-                HelperDef helperDef = getHelperDef();
-                if (helperDef != null && !helperDef.isLocal()) {
-                    json.writeMapEntry("helperDef", helperDef);
-                }
-                 */
 
                 json.writeMapEntry("styleDef", getStyleDef());
                 if (flavoredStyleDescriptor != null) {
                     json.writeMapEntry("flavoredStyleDef", getFlavoredStyleDef());
                 }
 
-                json.writeMapEntry("controllerDef", getControllerDef());
+                List<ControllerDef> controllerDefList = getLocalControllerDefs();
+                if (controllerDefList != null && !controllerDefList.isEmpty()) {
+                    json.writeMapKey("controllerDef");
+                    json.writeMapBegin();
+
+                    // Create a java controller signature
+                    DefDescriptor<ComponentDef> compDesc = DefDescriptorImpl.getAssociateDescriptor(descriptor, ComponentDef.class,
+                    		DefDescriptor.JAVA_PREFIX);
+                    json.writeMapEntry("descriptor", compDesc);
+
+                    json.writeMapKey("actionDefs");
+                    json.writeArrayBegin();
+
+                    for (ControllerDef controllerDef : controllerDefList) {
+                        for (Entry<String, ? extends ActionDef> actionDefEntry: controllerDef.getActionDefs().entrySet()) {
+                        	json.writeArrayEntry(actionDefEntry.getValue());
+                        }
+                    }
+ 
+                    json.writeArrayEnd();
+                    json.writeMapEnd();
+                }
+
                 json.writeMapEntry("modelDef", getModelDef());
                 json.writeMapEntry("superDef", getSuperDef());
                 if (preloading) {
@@ -1027,10 +1054,6 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
                 if (!handlers.isEmpty()) {
                     json.writeMapEntry("handlerDefs", handlers);
                 }
-                Collection<ImportDef> imports = getImportDefs();
-                if (!imports.isEmpty()) {
-                    json.writeMapEntry("imports", imports);
-                }
 
                 if (!facets.isEmpty()) {
                     json.writeMapEntry("facets", facets);
@@ -1044,11 +1067,6 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
 
                 if (isAbstract) {
                     json.writeMapEntry("isAbstract", isAbstract);
-                }
-
-                ProviderDef providerDef = getProviderDef();
-                if (providerDef != null && !providerDef.isLocal()) {
-                    json.writeMapEntry("providerDef", providerDef);
                 }
 
                 if (subDefs != null) {
@@ -1648,7 +1666,10 @@ RootDefinitionImpl<T> implements BaseComponentDef, Serializable {
 
         // If we've gotten this far, let's check for controllers.
         if (ret) {
-            ret = ret && getControllerDefDescriptors().isEmpty();
+            ret = ret && getLocalControllerDef() == null;
+        }
+        if (ret) {
+            ret = ret && getRemoteControllerDef() == null;
         }
 
         // If we've gotten this far, let's check for Styles (server rendering

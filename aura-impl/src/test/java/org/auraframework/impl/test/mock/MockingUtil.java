@@ -37,7 +37,6 @@ import org.auraframework.test.mock.MockModel;
 import org.auraframework.test.mock.MockModelDef;
 import org.auraframework.test.mock.MockProviderDef;
 import org.auraframework.test.source.StringSource;
-import org.auraframework.test.util.AuraTestingUtil;
 import org.auraframework.throwable.quickfix.DefinitionNotFoundException;
 import org.mockito.Mockito;
 
@@ -67,7 +66,6 @@ public class MockingUtil {
             Set<Definition> mocks = testContext.getLocalDefs();
             if (mocks != null) {
                 mocks.addAll(Arrays.asList(mockDefs));
-                AuraTestingUtil.clearCachedDefs(mocks);
             }
         }
     }
@@ -95,6 +93,7 @@ public class MockingUtil {
      * @return the Definition created from the provided markup
      * @throws Exception
      */
+    @SuppressWarnings("unchecked")
     public <D extends Definition> D mockDefMarkup(DefDescriptor<D> descriptor, String markup) throws Exception {
         Parser<D> parser = ParserFactory.getParser(Parser.Format.XML, descriptor);
         D def = parser.parse(descriptor,

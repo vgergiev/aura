@@ -20,9 +20,8 @@
  * @export
  */
 function AuraEventService () {
-    this.registry = new EventDefRegistry();
-    this.eventDispatcher = [];
-
+    this.eventDispatcher   = [];
+    this.eventDefRegistry  = {};
     this.savedEventConfigs = {};
 }
 
@@ -32,8 +31,8 @@ function AuraEventService () {
  * @returns {String} qualified event name
  */
 AuraEventService.prototype.qualifyEventName = function(event) {
-    if(event.indexOf("://") === -1){
-        event = "markup://"+event;
+    if (event.indexOf("://") === -1) {
+        event = "markup://" + event;
     }
     return event;
 };
@@ -54,7 +53,7 @@ AuraEventService.prototype.qualifyEventName = function(event) {
  */
 AuraEventService.prototype.newEvent = function(eventDef, eventName, sourceCmp) {
     $A.assert(eventDef, "EventDef is required");
-    eventDef = this.getEventDef(this.qualifyEventName(eventDef));
+    eventDef = this.getEventDef(eventDef);
 
     if (eventDef) {
         var config = {};
@@ -236,24 +235,21 @@ AuraEventService.prototype.removeHandler = function(config) {
  * @public
  * @export
  */
-AuraEventService.prototype.getEventDef = function(descriptor) {
-    $A.assert(descriptor, "No EventDef descriptor specified");
-    if(descriptor.indexOf("://") === -1){
-        descriptor = "markup://" + descriptor;
-    }
-    var def = this.registry.getDef(descriptor),
-        config = this.savedEventConfigs[descriptor];
+AuraEventService.prototype.getEventDef = function(config) {
+    var descConfig = this.createDescriptorConfig(config);
+    var descriptor = this.getDescriptorFromConfig(descConfig);
+    var definition = this.eventDefRegistry[descriptor];
 
-    if (!def && config) {
-        def = this.createEventDef(config);
-        delete this.savedEventConfigs[descriptor];
+    if (!definition && this.savedEventConfigs[descriptor]) {
+        definition = this.createFromSavedConfigs(descConfig);
     }
 
-    return def;
+    return definition;
 };
 
+
 /**
- * Checks to see if the definition for the event currently reside on the client. 
+ * Checks to see if the definition for the event currently reside on the client.
  * Could still exist on the server, we won't know that till we use a getDefinitiion call to try to retrieve it.
  * This method is private, to use it, use $A.hasDefinition("e.prefix:name");
  * @private
@@ -261,28 +257,36 @@ AuraEventService.prototype.getEventDef = function(descriptor) {
  * @return {Boolean}            True if the definition is present on the client.
  */
 AuraEventService.prototype.hasDefinition = function(descriptor) {
-    $A.assert(typeof descriptor==="string", "'descriptor' must be a valid event descriptor, such as 'namespace:event'.");
-
-    if (descriptor.indexOf("://") < 0) {
-        descriptor = "markup://" + descriptor; // support shorthand
-    }
-
-    return this.savedEventConfigs.hasOwnProperty(descriptor) || !!this.registry.getDef(descriptor);
+    return !!this.getEventDef(descriptor);
 };
+
+/**
+ * Gets descriptor from the config object (for normalization)
+ * @param {Object} Controller descriptor config
+ * @returns {String} Descriptor
+ * @private
+ */
+AuraEventService.prototype.createDescriptorConfig = function(descriptor) {
+    descriptor = typeof descriptor === 'string' ? descriptor : descriptor["descriptor"].toString();
+    descriptor = descriptor.indexOf("://") < 0 ? "markup://" + descriptor : descriptor;
+    return { "descriptor" : descriptor };
+};
+
 
 /**
  * Get the event definition. If it is not available, contact the server to download it.
  *
  * This method is private, to utilize it's functionality you can use $A.getDefinition("e.prefix:name");
- * 
+ *
  * @private
- * 
+ *
  * @param  {String}  descriptor Event descriptor in the pattern prefix:name or markup://prefix:name.
  * @param  {Function} callback  The function callback that gets executed with the definition. May go to the server first.
  * @return undefined            Always use the callback to access the definition.
  */
 AuraEventService.prototype.getDefinition = function(descriptor, callback) {
-    var def = this.getEventDef(descriptor);
+    var descriptorName = descriptor.replace('e.', '');
+    var def = this.getEventDef(descriptorName);
 
     if (def) {
         callback(def);
@@ -291,18 +295,51 @@ AuraEventService.prototype.getDefinition = function(descriptor, callback) {
 
     var action = $A.get("c.aura://ComponentController.getEventDef");
     action.setParams({
-        "name": descriptor
+        "name": descriptorName
     });
     action.setCallback(this, function (actionReponse) {
         var definition = null;
         if(actionReponse.getState() === "SUCCESS") {
-            definition = this.getEventDef(descriptor);
+            definition = this.getEventDef(descriptorName);
         }
         callback(definition);
     });
 
     $A.enqueueAction(action);
 };
+
+
+/**
+ * Gets descriptor from the config object (for normalization)
+ * @param {Object} Controller descriptor config
+ * @returns {String} Descriptor
+ * @private
+ */
+AuraEventService.prototype.getDescriptorFromConfig = function(descriptorConfig) {
+    var descriptor = descriptorConfig && descriptorConfig["descriptor"];
+    $A.assert(descriptor, "Event Descriptor for Config required for registration");
+    return descriptor;
+};
+
+
+/**
+ * Creates and saves EventDef into registry
+ * @param {Object} config config for EventDef
+ * @returns {EventDef} instance from registry
+ */
+AuraEventService.prototype.createFromSavedConfigs = function(config) {
+    var descriptor = config["descriptor"];
+    if (!descriptor && config["getDescriptor"]) {
+        descriptor = config.getDescriptor();
+    }
+
+    var def = new EventDef(this.savedEventConfigs[descriptor]);
+    this.eventDefRegistry[descriptor] = def;
+    delete this.savedEventConfigs[descriptor];
+    return def;
+};
+
+
 
 /**
  * Creates and returns EventDef from config
@@ -313,15 +350,24 @@ AuraEventService.prototype.getDefinition = function(descriptor, callback) {
  * @export
  */
 AuraEventService.prototype.createEventDef = function(config) {
-    var def =  this.registry.createDef(config);
-    if (def) {
-        delete this.savedEventConfigs[def.getDescriptor().toString()];
+    var descConfig = this.createDescriptorConfig(config);
+    var descriptor = this.getDescriptorFromConfig(descConfig);
+    var definition = this.eventDefRegistry[descriptor];
+
+    if (!definition) {
+        if (this.savedEventConfigs[descriptor]) {
+            definition = this.createFromSavedConfigs(descConfig);
+        } else {
+            definition = new EventDef(config);
+            this.eventDefRegistry[descriptor] = definition;
+        }
     }
-    return def;
+
+    return definition;
 };
 
 /**
- * Saves EventDef config so it can be use later when EventDef is actually used.
+ * Saves EventDef config so it can be used later when EventDef is actually used.
  * Allows Aura to only create EventDef when needed
  *
  * @param {Object} config event definition config
@@ -349,7 +395,7 @@ AuraEventService.prototype.hasHandlers = function(name) {
  * @export
  */
 AuraEventService.prototype.getRegisteredEvents = function() {
-    return Object.keys(this.registry.eventDefs);
+    return Object.keys(this.eventDefRegistry);
 };
 
 //#if {"excludeModes" : ["PRODUCTION", "PRODUCTIONDEBUG"]}

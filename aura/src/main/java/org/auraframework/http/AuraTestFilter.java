@@ -23,10 +23,7 @@ import java.lang.reflect.Proxy;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.Map.Entry;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -59,18 +56,14 @@ import org.auraframework.def.DefDescriptor.DefType;
 import org.auraframework.http.RequestParam.BooleanParam;
 import org.auraframework.http.RequestParam.StringParam;
 import org.auraframework.service.ContextService;
-import org.auraframework.service.DefinitionService;
 import org.auraframework.system.AuraContext;
 import org.auraframework.system.MasterDefRegistry;
-import org.auraframework.system.SourceListener;
 import org.auraframework.system.AuraContext.Authentication;
 import org.auraframework.system.AuraContext.Format;
 import org.auraframework.system.AuraContext.Mode;
-import org.auraframework.system.SourceListener.SourceMonitorEvent;
 import org.auraframework.test.Resettable;
 import org.auraframework.test.TestContext;
 import org.auraframework.test.TestContextAdapter;
-import org.auraframework.throwable.AuraRuntimeException;
 import org.auraframework.throwable.quickfix.DefinitionNotFoundException;
 import org.auraframework.throwable.quickfix.QuickFixException;
 import org.auraframework.util.AuraTextUtil;
@@ -79,7 +72,6 @@ import org.auraframework.util.json.JsonReader;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 
 /**
  * Supports test framework functionality, primarily for jstest mocks.
@@ -87,7 +79,6 @@ import com.google.common.collect.Sets;
 public class AuraTestFilter implements Filter {
     private static final Log LOG = LogFactory.getLog(AuraTestFilter.class);
 
-    private static final long CACHE_CLEARING_TIMEOUT_SECS = 60;
     private static final String GET_URI = "/aura?aura.tag=%s:%s&aura.format=HTML&aura.deftype=%s&aura.mode=%s&aura.access=%s";
 
     private static final StringParam contextConfig = new StringParam(AuraServlet.AURA_PREFIX + "context", 0, false);
@@ -134,7 +125,14 @@ public class AuraTestFilter implements Filter {
         // Check for requests to execute a JSTest, i.e. initial component GETs with particular parameters.
         HttpServletRequest request = (HttpServletRequest) req;
         if ("GET".equals(request.getMethod())) {
-            String path = request.getRequestURI().substring(request.getContextPath().length());
+            String contextPath = request.getContextPath();
+            String uri = request.getRequestURI();
+            String path;
+            if (uri.startsWith(contextPath)) {
+                path = uri.substring(contextPath.length());
+            } else {
+                path = uri;
+            }
             Matcher matcher = AuraRewriteFilter.DESCRIPTOR_PATTERN.matcher(path);
             if (matcher.matches()) {
                 // Extract the target component since AuraContext usually does not have the app descriptor set yet.
@@ -262,59 +260,6 @@ public class AuraTestFilter implements Filter {
     public void destroy() {
     }
 
-    /**
-     * Clear cached defs from the system. When mocking a def, if the def has already been cached, as itself, or as part
-     * of a preloaded set, the mock will not be effective, so it's safer to clear any cached defs after setting up mocks
-     * but before executing a test. This relies on source change notifications to get the servlets to clear their
-     * caches.
-     * 
-     * @param defs the Definitions to be cleared from any caches
-     */
-    public static <T extends Definition> void clearCachedDefs(Collection<T> defs) {
-        if (defs == null || defs.isEmpty()) {
-            return;
-        }
-
-        // Get the Descriptors for the provided Definitions
-        final DefinitionService definitionService = Aura.getDefinitionService();
-        final Set<DefDescriptor<?>> cached = Sets.newHashSet();
-        for (T def : defs) {
-            if (def != null) {
-                cached.add(def.getDescriptor());
-            }
-        }
-
-        // Wait for the change notifications to get processed. We expect listeners to get processed in the order in
-        // which they subscribe.
-        final CountDownLatch latch = new CountDownLatch(cached.size());
-        SourceListener listener = new SourceListener() {
-            private Set<DefDescriptor<?>> descriptors = Sets.newHashSet(cached);
-
-            @Override
-            public void onSourceChanged(DefDescriptor<?> source, SourceMonitorEvent event, String filePath) {
-                if (descriptors.remove(source)) {
-                    latch.countDown();
-                }
-                if (descriptors.isEmpty()) {
-                    definitionService.unsubscribeToChangeNotification(this);
-                }
-            }
-        };
-        definitionService.subscribeToChangeNotification(listener);
-        for (DefDescriptor<?> desc : cached) {
-            definitionService.onSourceChanged(desc, SourceMonitorEvent.CHANGED, null);
-        }
-        try {
-            if (!latch.await(CACHE_CLEARING_TIMEOUT_SECS, TimeUnit.SECONDS)) {
-                throw new AuraRuntimeException(String.format(
-                        "Timed out after %s seconds waiting for cached Aura definitions to clear: %s",
-                        CACHE_CLEARING_TIMEOUT_SECS, defs));
-            }
-        } catch (InterruptedException e) {
-            throw new AuraRuntimeException("May not have cleared all cached mock definitions", e);
-        }
-    }
-
     @SuppressWarnings("unchecked")
     private Map<String, Object> getConfigMap(HttpServletRequest request) {
         Map<String, Object> configMap = null;
@@ -382,30 +327,25 @@ public class AuraTestFilter implements Filter {
 
     private void loadTestMocks(AuraContext context, boolean doReset, Collection<Definition> mocks) {
         // TODO: fix error handling
-        if (mocks == null) {
+        if (mocks == null || mocks.isEmpty()) {
             return;
         }
 
-        if (!mocks.isEmpty()) {
-            boolean error = false;
-            MasterDefRegistry registry = context.getDefRegistry();
-            for (Definition def : mocks) {
-                try {
-                    if (doReset && def instanceof Resettable) {
-                        ((Resettable) def).reset();
-                    }
-                    registry.addLocalDef(def);
-                } catch (Throwable t) {
-                    LOG.error("Failed to add mock " + def, t);
-                    error = true;
+        boolean error = false;
+        MasterDefRegistry registry = context.getDefRegistry();
+        for (Definition def : mocks) {
+            try {
+                if (doReset && def instanceof Resettable) {
+                    ((Resettable) def).reset();
                 }
+                registry.addLocalDef(def);
+            } catch (Throwable t) {
+                LOG.error("Failed to add mock " + def, t);
+                error = true;
             }
-            if (doReset) {
-                clearCachedDefs(mocks);
-            }
-            if (error) {
-                Aura.get(TestContextAdapter.class).release();
-            }
+        }
+        if (error) {
+            Aura.get(TestContextAdapter.class).release();
         }
     }
 

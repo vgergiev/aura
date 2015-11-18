@@ -15,7 +15,7 @@
  */
 // jshint ignore: start
 // POLYFILL CLASSLIST (https://github.com/remy/polyfills/blob/master/classList.js)
-function lib(w) {
+function lib(w) { //eslint-disable-line no-unused-vars
   w || (w = window);
   
   if (!(typeof w.Element === "undefined" || "classList" in document.documentElement)) {
@@ -37,30 +37,34 @@ function lib(w) {
         splice = prototype.splice,
         join = prototype.join;
 
-    function DOMTokenList(el) {  
+    var DOMTokenList = function (el) {  
       this._element = el;
-      if (el.className != this._classCache) {
+      if (el.className !== this._classCache) {
         this._classCache = el.className;
 
-        if (!this._classCache) return;
-        
-          // The className needs to be trimmed and split on whitespace
-          // to retrieve a list of classes.
-          var classes = this._classCache.replace(/^\s+|\s+$/g,'').split(/\s+/),
+        if (!this._classCache) {
+          return;
+        }
+
+        // The className needs to be trimmed and split on whitespace
+        // to retrieve a list of classes.
+        var classes = this._classCache.replace(/^\s+|\s+$/g,'').split(/\s+/),
             i;
         for (i = 0; i < classes.length; i++) {
           push.call(this, classes[i]);
         }
       }
-    }
+    };
 
-    function setToClassName(el, classes) {
+    var setToClassName = function (el, classes) {
       el.className = classes.join(' ');
-    }
+    };
 
     DOMTokenList.prototype = {
       add: function(token) {
-        if(this.contains(token)) return;
+        if(this.contains(token)) {
+          return;
+        }
         push.call(this, token);
         setToClassName(this._element, slice.call(this, 0));
       },
@@ -94,15 +98,15 @@ function lib(w) {
 
     window.DOMTokenList = DOMTokenList;
 
-    function defineElementGetter (obj, prop, getter) {
-            if (Object.defineProperty) {
-                    Object.defineProperty(obj, prop,{
-                            get : getter
-                    });
-            } else {                                        
-                    obj.__defineGetter__(prop, getter);
-            }
-    }
+    var defineElementGetter = function (obj, prop, getter) {
+      if (Object.defineProperty) {
+        Object.defineProperty(obj, prop,{
+          get : getter
+        });
+      } else {
+        obj.__defineGetter__(prop, getter);
+      }
+    };
 
     defineElementGetter(Element.prototype, 'classList', function () {
       return new DOMTokenList(this);                        

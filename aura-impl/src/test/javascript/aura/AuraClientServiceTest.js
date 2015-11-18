@@ -69,7 +69,7 @@ Test.Aura.AuraClientServiceTest = function() {
     });
 
     [Fixture]
-    function testSendOutCabooseAction() {
+    function testSendOutForegroundActions() {
     	[Fact]
     	function returnsTrueWhen60sPass() {
     		// Arrange
@@ -84,6 +84,25 @@ Test.Aura.AuraClientServiceTest = function() {
                 actual = target.shouldSendOutForegroundActions([], 1);
             });
             // Assert : we send out caboose action if it has been longer then 60s since last send
+            Assert.Equal(true, actual);
+    	}
+    	
+    	[Fact]
+    	function returnsTrueMoreForegroundThanCaboose() {
+    		// Arrange
+    		var target;
+            mockGlobal(function() {
+                target = new Aura.Services.AuraClientService();
+                target.lastSendTime = Date.now();//make sure we won't send it out because of 60s has passed
+            });
+    		// Act
+            var actual;
+            var action1 = new MockAction("server", true);
+            var action2 = new MockAction("server", true);
+            mockGlobal(function() {
+                actual = target.shouldSendOutForegroundActions([action1, action2], 1);
+            });
+            // Assert : we send out caboose action if there are more foreground actions than caboose ones
             Assert.Equal(true, actual);
     	}
     }
@@ -224,53 +243,6 @@ Test.Aura.AuraClientServiceTest = function() {
             Assert.Equal(4, target.countAvailableXHRs());
         }
     };
-
-    [Fixture]
-    function testCreateIntegrationErrorConfig() {
-        [Fact]
-        function ReturnsErrorConfig() {
-            // Arrange
-            var target;
-            mockGlobal(function() {
-                target = new Aura.Services.AuraClientService();
-            });
-            var errorMsg = "Test Error Message";
-            // Act
-            var actual;
-            mockGlobal(function() {
-                actual = target.createIntegrationErrorConfig(errorMsg);
-            });
-            // Assert
-            var expected;
-            expected = {
-                    "componentDef" : {
-                        "descriptor" : "markup://ui:message"
-                    },
-
-                    "attributes" : {
-                        "values" : {
-                            "title" : "Aura Integration Service Error",
-                            "severity" : "error",
-                            "body" : [
-                                {
-                                    "componentDef" : {
-                                        "descriptor" : "markup://ui:outputText"
-                                    },
-
-                                    "attributes" : {
-                                        "values" : {
-                                            "value" : "mockedJson:"+errorMsg
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    }
-            };
-            Assert.Equal(expected, actual);
-        }
-
-    }
 
     var id = 0;
 
@@ -888,12 +860,10 @@ Test.Aura.AuraClientServiceTest = function() {
         var mockLocation = { reload: function() {} };
 
         var mockComponentService = {
-            registry: {
-                clearStorage: function() {
-                    componentDefsClearCalled = true;
-                    return {
-                        then: function() {}
-                    }
+            clearDefsFromStorage: function() {
+                componentDefsClearCalled = true;
+                return {
+                    then: function() {}
                 }
             }
         };
@@ -1059,8 +1029,11 @@ Test.Aura.AuraClientServiceTest = function() {
                         decode : function() {
                             return mockData.decodedResponse;
                         },
-                        resolveRefs : function(input) {
+                        resolveRefsArray : function(input) {
                             // copy input in case inner objects are changed
+                            requestedToResolve.push(JSON.stringify(input));
+                        },
+                        resolveRefsObject: function (input) {
                             requestedToResolve.push(JSON.stringify(input));
                         }
                     },
@@ -1088,12 +1061,9 @@ Test.Aura.AuraClientServiceTest = function() {
                 }
             };
             
-            var response = {
-                status : 200,
-                responseText : "'useDecodedResponseInstead'"
-            };
-            
+            var response = { status : 200, responseText : "'useDecodedResponseInstead'" };
             var target;
+
             mocksForDecode(function() {
                 target = new Aura.Services.AuraClientService();
                 

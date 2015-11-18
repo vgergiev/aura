@@ -147,11 +147,11 @@
 	 there are unit tests on the library that test the details,
 	 this just needs to make sure the values are properly passed through
 	  */
-	 testAdvanced: {
+	 _testAdvanced: {
 	 	test: function(cmp) {
 	 		var myPanel = null;
 	 		var littleTarget = cmp.find('littleTarget').getElement();
-			var body = $A.newCmp({componentDef: 'aura:unescapedHtml', attributes: {values: {value: '<div class="panel-content">Woooooo</div>'}}});
+			var body = $A.createComponentFromConfig({componentDef: 'aura:unescapedHtml', attributes: {values: {value: '<div class="panel-content">Woooooo</div>'}}});
 
 	 		$A.test.addWaitFor(true, function() {
 	 			return !!myPanel;
@@ -159,9 +159,8 @@
 
 	 			var p = myPanel.getElement();
 	 			var t = cmp.find('littleTarget').getElement();
-
-	 			var actual = Math.round(p.getBoundingClientRect().left) == Math.round(t.getBoundingClientRect().left);
-	 			$A.test.assert(actual, 'left should be aligned');
+	 			var actual = Math.floor(p.getBoundingClientRect().right) == Math.floor(t.getBoundingClientRect().right);
+	 			$A.test.assert(actual, 'right should be aligned');
 	 		});
 
 
@@ -171,9 +170,10 @@
 	                closeOnClickOut: true,
 	                useTransition: false,
 	                body  : body,
-	                advanced: true,
-	                targetAlign: 'left top',
-	                align: 'left top',
+	                advancedConfig: {
+	                	targetAlign: 'right top',
+	                	align: 'right top'
+	                },
 	                pad:0,
 	                showPointer: false,
 	                boundingElement: window
@@ -188,9 +188,31 @@
 
 	 testTopPad: {
 	 	test: function(cmp) {
+	 	    var that = this;
 	 		var myPanel = null;
 	 		var littleTarget = cmp.find('littleTarget').getElement();
-			var body = $A.newCmp({componentDef: 'aura:unescapedHtml', attributes: {values: {value: '<div class="panel-content">Woooooo</div>'}}});
+	 		$A.createComponent("aura:unescapedHtml", {value: '<div class="panel-content">Woooooo</div>'}, function(body) {
+	            that.makePanel({
+                    referenceElement: littleTarget,
+                    showCloseButton: false,
+                    closeOnClickOut: true,
+                    useTransition: false,
+                    body  : body,
+                    advancedConfig: {
+                        targetAlign: 'left top',
+                        align: 'left top',
+                        vertPad: 5
+                    },
+                    pad: 0,
+                    showPointer: false,
+                    boundingElement: window
+                }, function(panel) {
+                    setTimeout(function(){
+                        myPanel = panel;
+                    },5);
+                    
+                }); 
+	 		});
 
 	 		$A.test.addWaitFor(true, function() {
 	 			return !!myPanel;
@@ -207,65 +229,45 @@
 
 	 		});
 
-
-	        this.makePanel({
-	                referenceElement: littleTarget,
-	                showCloseButton: false,
-	                closeOnClickOut: true,
-	                useTransition: false,
-	                body  : body,
-	                advanced: true,
-	                targetAlign: 'left top',
-	                align: 'left top',
-	                pad: 0,
-	                padTop: 5, 
-	                showPointer: false,
-	                boundingElement: window
-	        }, function(panel) {
-	        	setTimeout(function(){
-	        		myPanel = panel;
-	        	},5);
-	        	
-	        });	 	
 	    }
 	 },
 
 	 makeTest: function(direction, testFunc, inside){
 	 	return function(cmp) {
-	 		var body = $A.newCmp({componentDef: 'aura:unescapedHtml', attributes: {values: {value: '<div class="panel-content">Woooooo</div>'}}})
-			var bigTarget = cmp.find('bigTarget').getElement();
-			var littleTarget = cmp.find('littleTarget').getElement();
-	        var value = direction;
+	 	   var bigTarget = cmp.find('bigTarget').getElement();
+           var littleTarget = cmp.find('littleTarget').getElement();
+           var value = direction;
 
-	        var isInside = inside || false;
-	        var myPanel = null;
+           var isInside = inside || false;
+           var myPanel = null;
+           var that = this;
+           $A.createComponent("aura:unescapedHtml", {value: '<div class="panel-content">Woooooo</div>'}, function(body) {
+               that.makePanel({
+                   referenceElement: isInside? bigTarget: littleTarget,
+                   showCloseButton: false,
+                   closeOnClickOut: true,
+                   useTransition: false,
+                   body  : body,
+                   direction: value,
+                   showPointer: false,
+                   boundingElement: window,
+                   inside: isInside,
+                   pad: isInside ? 0 : 15 //easier to caluculate insideness with 0 pad
+               }, function(panel) {
+                   setTimeout(function(){
+                       myPanel = panel;
+                   }, 5);
+               });
+           });
 
-	        $A.test.addWaitFor(true, 
-	        	function() {
-	        		return !!myPanel;
-	        	}, function() {
-	        		return testFunc(cmp, myPanel);
-	        	});
-
-	        this.makePanel({
-	                referenceElement: isInside? bigTarget: littleTarget,
-	                showCloseButton: false,
-	                closeOnClickOut: true,
-	                useTransition: false,
-	                body  : body,
-	                direction: value,
-	                showPointer: false,
-	                boundingElement: window,
-	                inside: isInside,
-	                pad: isInside ? 0 : 15 //easier to caluculate insideness with 0 pad
-	        }, function(panel) {
-	        	setTimeout(function(){
-	        		myPanel = panel;
-	        	}, 5)
-	        	
-	        });
-	 	}
-	 },
+           $A.test.addWaitFor(true, 
+                   function() {
+               return !!myPanel;
+           }, function() {
+               return testFunc(cmp, myPanel);
+           });
+         }
+    },
 
 	 makePanel: function(config, cb) {
 	 	$A.get('e.ui:createPanel').setParams({

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-function lib() {
+function lib() { //eslint-disable-line no-unused-vars
 
     var SHARED_SINGLETON = null;
 
@@ -53,7 +53,8 @@ function lib() {
                 var panels = containersDefs || [];
                 for (var i = 0; i < panels.length; ++i) {
                     var panel = panels[i];
-                    var alias = panel.attributes.values.alias;
+                    panel.attributes = panel.attributes || {values:{}};
+                    var alias = panel.attributes && panel.attributes.values.alias;
                     var name  = alias && alias.value || panel.componentDef.descriptor.split(':').pop();
                     if (!CONTAINERS_DEF[name]) {
                         CONTAINERS_DEF[name] = panel;    
@@ -87,18 +88,18 @@ function lib() {
 
                 if (config.visible) {
                     config.onBeforeShow && config.onBeforeShow(container);
-                    container.show(function (t) {
+                    container.show(function () {
                         config.onAfterShow && config.onAfterShow(container);
                     });
                 }
             },
             destroyContainer: function (container) {
-                var wrapper  = this.getContainerWrapper(),
-                    children = wrapper.get('v.body'),
+                var containerWrapper  = this.getContainerWrapper(),
+                    children = containerWrapper.get('v.body'),
                     index    = children.indexOf(container);
 
                 children.splice(index, 1);
-                wrapper.set('v.body', children, true);
+                containerWrapper.set('v.body', children, true);
                 return container.destroy();
             },
             getContainerWrapper: function () {
@@ -107,9 +108,9 @@ function lib() {
             getRegisteredContainers: function () {
                 return CONTAINERS_DEF;
             },
-            setContainerWrapper: function (wrapper) {
-                $A.assert($A.util.isComponent(wrapper), 'Container wrapper has to be a type Component');
-                CONTAINER_WRAPPER_CMP = wrapper;
+            setContainerWrapper: function (containerWrapperCmp) {
+                $A.assert($A.util.isComponent(containerWrapperCmp), 'Container wrapper has to be a type Component');
+                CONTAINER_WRAPPER_CMP = containerWrapperCmp;
             }
         };
     }

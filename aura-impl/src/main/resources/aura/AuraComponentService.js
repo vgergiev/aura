@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/*jslint sub: true */
+/*jslint sub: true, evil: true */
 
 /**
  * @description The Aura Component Service, accessible using $A.service.component.  Creates and Manages Components.
@@ -21,28 +21,13 @@
  * @export
  */
 function AuraComponentService () {
-    this.registry = new Aura.Component.ComponentDefRegistry();
-    this.controllerDefRegistry = new ControllerDefRegistry();
-    this.actionDefRegistry = new ActionDefRegistry();
-    this.modelDefRegistry = new ModelDefRegistry();
-    this.providerDefRegistry = new ProviderDefRegistry();
-    this.rendererDefRegistry = new RendererDefRegistry();
-    this.helperDefRegistry = new HelperDefRegistry();
-    this.libraryDefRegistry = new LibraryDefRegistry();
-    this.indexes = { globalId : {} };
-    this.renderedBy = "auraRenderedBy";
-    this["renderedBy"] = this.renderedBy;   // originally exposed using exp()
-    this.flavorable = "auraFlavorable";
-
-    // KRIS:
-    // We delay the creation of the definition of a class till it's requested.
-    // The function that creates the component class is a classConstructorExporter
-    this.classConstructorExporter={};
-
-    // KRIS:
-    // Collection of all the component classes we generate for
-    // proper stack traces and proper use of prototypical inheritance
-    this.classConstructors={};
+    // Def registries
+    this.componentDefRegistry  = {};
+    this.controllerDefRegistry = {};
+    this.actionDefRegistry     = {};
+    this.modelDefRegistry      = {};
+    this.libraryDefRegistry    = new Aura.Library.LibraryDefRegistry(); // To abstract lib logic
+    this.componentDefStorage   = new Aura.Component.ComponentDefStorage();
 
     // holds ComponentDef configs to be created
     this.savedComponentConfigs = {};
@@ -52,6 +37,24 @@ function AuraComponentService () {
 
     // references ActionDef descriptor to its ComponentDef descriptor
     this.actionDefRelationship = {};
+
+    // Global registry for cmp instances
+    this.indexes = { globalId : {} };
+
+    this.dynamicNamespaces = []; // TODO: @dval: delete after createComponent refactor
+
+    // Static attr names
+    this.flavorable    = "auraFlavorable";
+    this.renderedBy    = "auraRenderedBy";
+    this["renderedBy"] = this.renderedBy;   // originally exposed using exp()
+
+    // We delay the creation of the definition of a class till it's requested.
+    // The function that creates the component class is a classConstructorExporter
+    this.classConstructorExporter = {};
+
+    // Collection of all the component classes we generate for
+    // proper stack traces and proper use of prototypical inheritance
+    this.classConstructors = {};
 }
 
 /**
@@ -62,7 +65,7 @@ function AuraComponentService () {
  * @deprecated use getComponent instead
  * @export
  */
-AuraComponentService.prototype.get =  function(globalId) {
+AuraComponentService.prototype.get = function(globalId) {
     return this.indexes.globalId[globalId];
 };
 
@@ -79,11 +82,35 @@ AuraComponentService.prototype.getComponent = function(identifier) {
 };
 
 /**
+ * Gets descriptor from the config object (for normalization)
+ * @param {Object} Controller descriptor config
+ * @returns {String} Descriptor
+ * @private
+ */
+AuraComponentService.prototype.getDescriptorFromConfig = function(descriptorConfig) {
+    var descriptor = descriptorConfig && descriptorConfig["descriptor"];
+    $A.assert(descriptor, "Descriptor for Config required for registration");
+    return descriptor;
+};
+
+/**
+ * Gets descriptor from the config object (for normalization)
+ * @param {Object} Controller descriptor config
+ * @returns {String} Descriptor
+ * @private
+ */
+AuraComponentService.prototype.createDescriptorConfig = function(descriptor) {
+    descriptor = typeof descriptor === 'string' ? descriptor : descriptor["descriptor"].toString();
+    descriptor = descriptor.indexOf("://") < 0 ? "markup://" + descriptor : descriptor;
+    return { "descriptor" : descriptor };
+};
+
+
+/**
  * Counts all the components currently created in the application.
- *
  * @example
  * var count = $A.componentService.countComponents();
- * 
+ *
  * @public
  * @platform
  * @export
@@ -100,13 +127,17 @@ AuraComponentService.prototype.countComponents = function() {
  * @export
  */
 AuraComponentService.prototype.getRenderingComponentForElement = function(element) {
-    if ($A.util.isUndefinedOrNull(element)) { return null;}
-
     var ret;
+
+    if ($A.util.isUndefinedOrNull(element)) {
+        return null;
+    }
+
     if ($A.util.hasDataAttribute(element, this.renderedBy)) {
         var id = $A.util.getDataAttribute(element, this.renderedBy);
         ret = this.get(id);
-    } else if(element.parentNode){
+
+    } else if(element.parentNode) {
         ret = this.getRenderingComponentForElement(element.parentNode);
     }
 
@@ -130,16 +161,14 @@ AuraComponentService.prototype.getAttributeProviderForElement = function(element
  */
 AuraComponentService.prototype.newComponentArray = function(config, attributeValueProvider, localCreation, doForce){
     var ret = [];
-
-    for(var i=0;i<config.length;i++){
+    for (var i = 0; i < config.length; i++) {
         ret.push(this["newComponentDeprecated"](config[i], attributeValueProvider, localCreation, doForce));
     }
-
     return ret;
 };
 
 /**
- * Create a component from a type and a set of attributes. 
+ * Create a component from a type and a set of attributes.
  * It accepts the name of a type of component, a map of attributes,
  * and a callback to notify callers.
  *
@@ -152,80 +181,51 @@ AuraComponentService.prototype.newComponentArray = function(config, attributeVal
  * $A.createComponent("aura:text",{value:'Hello World'}, function(auraTextComponent, status, statusMessagesList){
  *      // auraTextComponent is an instance of aura:text containing the value Hello World
  * });
- * 
+ *
  * @public
  * @platform
  * @function
  * @export
  */
-AuraComponentService.prototype.createComponent = function(type, attributes, callback){
+AuraComponentService.prototype.createComponent = function(type, attributes, callback) {
     $A.assert($A.util.isString(type), "ComponentService.createComponent(): 'type' must be a valid String.");
-    $A.assert(!attributes||$A.util.isObject(attributes),"ComponentService.createComponent(): 'attributes' must be a valid Object.");
-    $A.assert($A.util.isFunction(callback),"ComponentService.createComponent(): 'callback' must be a Function pointer.");
+    $A.assert(!attributes || $A.util.isObject(attributes), "ComponentService.createComponent(): 'attributes' must be a valid Object.");
+    $A.assert($A.util.isFunction(callback), "ComponentService.createComponent(): 'callback' must be a Function pointer.");
 
-    var configItem={
-        "componentDef": type.toString(),
-        "attributes":{
-            "values": attributes||null
-        },
-        "localId":(attributes&&attributes["aura:id"])||null
-    };
-    var configObj = this.getComponentConfigs(configItem);
-    var def = configObj["definition"];
-    var desc = configObj["descriptor"];
-    configItem = configObj["configuration"];
-
-    configItem["componentDef"] = {
-        "descriptor": desc
+    var config = {
+        "componentDef" : this.createDescriptorConfig(type),
+        "attributes"   : { "values" : attributes },
+        "localId"      : attributes && attributes["aura:id"],
+        "flavor"       : (attributes && attributes["aura:flavor"])
     };
 
-    if (!def && desc.indexOf("layout://") === 0) {
-        // clear dynamic namespaces so that the server can send it back.
-        this.registry.dynamicNamespaces = [];
-        // throw error instead of trying to requestComponent from server which is prohibited
-        throw new Error("Missing definition: " + desc);
-    }
+    return this.createComponentPrivAsync(config, callback);
+};
 
 
-    if (!def || def.hasRemoteDependencies()) {
-        var action=this.requestComponent(null, callback, configItem, null, 0, true);
-        // Abortable by default, but return the action so that customers can manipulate other settings.
-        action.setAbortable(true);
-        $A.enqueueAction(action);
-        return action;
-    } else {
-		var component=null;
-        var status="";
-        var message="";
-        try {
-			if($A.clientService.allowAccess(def)) {
-    	        component=this.createComponentInstance(configItem, true);
-				status="SUCCESS";
-        	}else{
-            	// #if {"excludeModes" : ["PRODUCTION","AUTOTESTING"]}
-	            $A.warning("Access Check Failed! AuraComponentService.createComponent(): '"+(def&&def.getDescriptor().getQualifiedName())+"' is not visible to '"+$A.getContext().getCurrentAccess()+"'.");
-    	        // #end
-           		status="ERROR";
-				message="Unknown component '"+type+"'.";
-			}
-        } catch(e) {
-            status = "ERROR";
-            message = e.message;
-        }
-        callback(component, status, message);
-
-    }
-    return null;
+/**
+ * Create a component from a DefRef config
+ * It accepts the config Object to generate the tree
+ *
+ * @param {Object} config A map with the component tree configuration,
+ *
+ * @public
+ * @function
+ * @export
+ */
+AuraComponentService.prototype.createComponentFromConfig = function(config) {
+    $A.assert(config, "Config is required to create a component");
+    return this.createComponentPriv(config);
 };
 
 /**
  * Create an array of components from a list of types and attributes.
  * It accepts a list of component names and attribute maps, and a callback
  * to notify callers.
- * 
+ *
  * @param {Array} components The list of components to create, e.g. <code>["ui:button",{"press":component.getReference("c.handlePress")}]</code>
  * @param {Function} callback The method to call, to which it returns the newly created components.
- * 
+ *
  * @example $A.createComponents([
  *      ["aura:text",{value:'Hello'}],
  *      ["ui:button",{label:'Button'}],
@@ -236,7 +236,7 @@ AuraComponentService.prototype.createComponent = function(type, attributes, call
  *      // 1 - Button Component with label Button
  *      // 2 - Text component containing World
  *  });
- * 
+ *
  * @public
  * @platform
  * @function
@@ -288,7 +288,7 @@ AuraComponentService.prototype.newComponent = function(config, attributeValuePro
  * creates a <code>ui:inputText</code> component.
  * @param {Object} config Use config to pass in your component definition and attributes. Supports lazy or exclusive loading by passing in "load": "LAZY" or "load": "EXCLUSIVE"
  * @param {Object} attributeValueProvider The value provider for the attributes
- * 
+ *
  * @platform
  * @function
  * @deprecated use createComponent instead
@@ -309,18 +309,18 @@ AuraComponentService.prototype.newComponentDeprecated = function(config, attribu
 
     config = configObj["configuration"];
 
-    if(doForce !== true && !config["creationPath"]){
-        if(def && !def.hasRemoteDependencies() ){
+    if (doForce !== true && !config["creationPath"]) {
+        if (def && !def.hasRemoteDependencies()) {
             localCreation = true;
             delete config["load"];
-        }else if(!config["load"]){
+        } else if (!config["load"]) {
             load = "LAZY";
-        }else{
+        } else {
             load = config["load"];
         }
     }
 
-    if(desc === "markup://aura:placeholder"){
+    if (desc === "markup://aura:placeholder") {
         load = null;
     }
 
@@ -342,7 +342,7 @@ AuraComponentService.prototype.newComponentDeprecated = function(config, attribu
                 "valueProvider":oldConfig["valueProvider"]
             }
         };
-    }else{
+    } else {
         // var currentAccess = $A.getContext().getCurrentAccess();
         // Server should handle the case of an unknown def fetched "lazily"
         if(!$A.clientService.allowAccess(def) /* && currentAccess  */) {
@@ -364,10 +364,7 @@ AuraComponentService.prototype.newComponentDeprecated = function(config, attribu
  * @param {Boolean} localCreation See documentation on Component.js constructor for documentation on the localCreation property.
  */
 AuraComponentService.prototype.createComponentInstance = function(config, localCreation) {
-
-
-    if(!config["skipCreationPath"]) {
-
+    if (!config["skipCreationPath"]) {
         var context = $A.getContext();
         var creationPath;
         var action;
@@ -441,18 +438,29 @@ AuraComponentService.prototype.createComponentInstance = function(config, localC
 };
 
 /**
+ * Load the initial map of class constructors.
+ * @param {Object} classConstructorExporter A map of descriptor:exporter. See addComponentClass().
+ * @export
+ */
+AuraComponentService.prototype.initComponentClass = function(classConstructorExporter){
+    if (!this.classConstructorExporter) {
+        this.classConstructorExporter = classConstructorExporter;
+    }
+};
+
+/**
  * Use the specified constructor as the definition of the class descriptor.
  * We store them for execution later so we do not load definitions into memory unless they are utilized in getComponentClass.
  * @param {String} descriptor Uses the pattern of namespace:componentName.
- * @param {Function} classConstructor A function that when executed will define the class constructor for the specified class.
+ * @param {Function} exporter A function that when executed will return the component object litteral.
  * @export
  */
-AuraComponentService.prototype.addComponentClass = function(descriptor, classConstructor){
-    if(descriptor in this.classConstructorExporter || descriptor in this.classConstructors) {
+AuraComponentService.prototype.addComponentClass = function(descriptor, exporter){
+    if (descriptor in this.classConstructorExporter || descriptor in this.classConstructors) {
         return;
     }
 
-    this.classConstructorExporter[descriptor] = classConstructor;
+    this.classConstructorExporter[descriptor] = exporter;
 };
 
 /**
@@ -464,10 +472,11 @@ AuraComponentService.prototype.addComponentClass = function(descriptor, classCon
 AuraComponentService.prototype.getComponentClass = function(descriptor) {
     var storedConstructor = this.classConstructors[descriptor];
 
-    if(!storedConstructor) {
+    if (!storedConstructor) {
         var exporter = this.classConstructorExporter[descriptor];
-        if(exporter) {
-            storedConstructor = exporter();
+        if (exporter) {
+            var componentProperties = exporter();
+            storedConstructor = this.buildComponentClass(componentProperties);
             this.classConstructors[descriptor] = storedConstructor;
             // No need to keep all these extra functions.
             delete this.classConstructorExporter[descriptor];
@@ -475,6 +484,106 @@ AuraComponentService.prototype.getComponentClass = function(descriptor) {
     }
 
     return storedConstructor;
+};
+
+/**
+ * Build the class for the specified component.
+ * This process is broken into subroutines for clarity and maintainabiity,
+ * and those are all combined into one single scope by the compiler.
+ * @param {Object} componentProperties The pre-built component properties.
+ * @returns {Function} The component class.
+ */
+AuraComponentService.prototype.buildComponentClass = function(componentProperties) {
+
+    this.addComponentClassInheritance(componentProperties);
+    this.addComponentClassLibraries(componentProperties);
+    var componentConstructor = this.buildComponentClassConstructor(componentProperties);
+
+    return componentConstructor;
+};
+
+
+/**
+ * Augment the component class properties with their respective inheritance. The
+ * inner classes are "static" classes, and currenltly, only the helper is inherited.
+ * @param {Object} componentProperties The pre-built component properties.
+ */
+AuraComponentService.prototype.addComponentClassInheritance = function(componentProperties) {
+
+    var superDescriptor = componentProperties["meta"]["extends"];
+    var superConstuctor = this.getComponentClass(superDescriptor);
+
+    // Apply inheritance
+    for (var name in {"controller":true, "helper":true}) {
+
+        componentProperties[name] = componentProperties[name] || {};
+
+        // Currently, only the helper is inherited.
+        var superInnerClass = superConstuctor && superConstuctor.prototype[name];
+        if (superInnerClass) {
+            // TODO: Update to the following line once all browsers have support for writeable __proto__
+            // (requires IE11+, supported elsewhere).
+            // componentProperties["controller"]['__proto__'] = superController;
+            // componentProperties["helper"]['__proto__'] = superHelper;
+            var innerClass = Object.create(superInnerClass);
+            var instanceProperties = componentProperties[name];
+            if (instanceProperties) {
+                for (var property in instanceProperties) {
+                    innerClass[property] = instanceProperties[property];
+                }
+            }
+            componentProperties[name] = innerClass;
+        }
+    }
+};
+
+/**
+ * Augment the component class properties with the component libraries. This method
+ * attached the component imports (a.k.a. "libraries") on the properties.
+ * @param {Object} componentProperties The pre-built component properties.
+ */
+AuraComponentService.prototype.addComponentClassLibraries = function(componentProperties) {
+
+    var componentImports = componentProperties["meta"]["imports"];
+    if (componentImports) {
+        var helper = componentProperties["helper"];
+        for (var property in componentImports) {
+            helper[property] = this.getLibraryDef(componentImports[property]);
+        }
+        componentProperties["helper"] = helper;
+    }
+};
+
+/**
+ * Build the class constructor for the specified component.
+ * @param {Object} componentProperties The pre-built component properties.
+ * @returns {Function} The component class.
+ */
+AuraComponentService.prototype.buildComponentClassConstructor = function(componentProperties) {
+
+    var className = componentProperties["meta"]["name"];
+
+    // Create a named function dynamically to use as a constructor.
+    // TODO: Update to the following line when all browsers have support for dynamic function names.
+    // (only supported in IE11+).
+    // var componentConstructor = function [className](){ Component.apply(this, arguments); };
+    var componentConstructor = new Function(
+        "Component",
+        "return function " + className + "() { Component.apply(this, arguments); };"
+    )(Component);
+
+    // Extends from Component (and restore constructor).
+    componentConstructor.prototype = Object.create(Component.prototype);
+    componentConstructor.prototype.constructor = componentConstructor;
+
+    // Mixin inner classes (controller, helper, renderer, provider) and meta properties.
+    for (var property in componentProperties) {
+        if (componentProperties.hasOwnProperty(property)) {
+            componentConstructor.prototype[property] = componentProperties[property];
+        }
+    }
+
+    return componentConstructor;
 };
 
 /**
@@ -486,7 +595,6 @@ AuraComponentService.prototype.getComponentClass = function(descriptor) {
  */
 AuraComponentService.prototype.hasComponentClass = function(descriptor) {
     //descriptor = descriptor.replace(/^\w+:\/\//, "").replace(/\.|:/g, "$").replace(/-/g, "_");
-
     return !!(descriptor in this.classConstructorExporter || descriptor in this.classConstructors);
 };
 
@@ -555,7 +663,7 @@ AuraComponentService.prototype.newComponentAsync = function(callbackScope, callb
 
             if (!def && desc.indexOf("layout://") === 0) {
                 // clear dynamic namespaces so that the server can send it back.
-                $A.componentService.registry.dynamicNamespaces = [];
+                $A.componentService.dynamicNamespaces = [];
                 // throw error instead of trying to requestComponent from server which is prohibited
                 throw new Error("Missing definition: " + desc);
             }
@@ -629,6 +737,7 @@ AuraComponentService.prototype.requestComponent = function(callbackScope, callba
                 merging[mkey] = attributes[mkey];
             }
             returnedConfig["localId"] = config["localId"];
+            returnedConfig["flavor"] = config["flavor"];
 
             try {
                 newComp = $A.newCmpDeprecated(returnedConfig, avp, false);
@@ -665,10 +774,7 @@ AuraComponentService.prototype.requestComponent = function(callbackScope, callba
  * @export
  */
 AuraComponentService.prototype.computeValue = function(valueObj, valueProvider) {
-    if ($A.util.isExpression(valueObj)) {
-        return valueObj.evaluate(valueProvider);
-    }
-    return valueObj;
+    return $A.util.isExpression(valueObj) ? valueObj.evaluate(valueProvider) : valueObj;
 };
 
 /**
@@ -723,7 +829,7 @@ AuraComponentService.prototype.getComponentConfigs = function(config, attributeV
 
     if (!def && componentDef["attributeDefs"]) {
         // create definition if it doesn't current exist and component definition config provided
-        def = this.createDef(componentDef);
+        def = this.createComponentDef(componentDef);
     }
 
     if (def) {
@@ -748,23 +854,17 @@ AuraComponentService.prototype.index = function(component){
 };
 
 /**
- * Checks to see if the definition for the component currently reside on the client and the context has access to it. 
+ * Checks to see if the definition for the component currently reside on the client and the context has access to it.
  * Could still exist on the server, we won't know that till we use a getDefinition call to try to retrieve it.
- * 
+ *
  * This method is private, to use it, use $A.hasDefinition("prefix:name");
- * 
+ *
  * @private
  * @param  {String}  descriptor Component descriptor in the pattern prefix:name or markup://prefix:name.
  * @return {Boolean}            True if the definition is present on the client.
  */
 AuraComponentService.prototype.hasDefinition = function(descriptor) {
-    $A.assert(typeof descriptor==="string", "'descriptor' must be a valid event descriptor, such as 'prefix:name'");
-
-    if (descriptor.indexOf("://") < 0) {
-        descriptor = "markup://" + descriptor; // support shorthand
-    }
-
-    return !!this.registry.getDef(descriptor);
+    return !!this.getDef(descriptor);
 };
 
 
@@ -774,13 +874,13 @@ AuraComponentService.prototype.hasDefinition = function(descriptor) {
  * This method is private, to utilize it, you should use $A.getDefinition("prefix:markup");
  *
  * @private
- * 
+ *
  * @param  {String}   descriptor Component descriptor in the pattern prefix:name or markup://prefix:name.
  * @param  {Function} callback   Function that is passed the definition. The definition may be NULL if either the definition does not exist, or you do not have access to it.
  * @return undefined             Always use the callback to access the returned definition.
  */
 AuraComponentService.prototype.getDefinition = function(descriptor, callback) {
-    var def = this.getComponentDef(descriptor);
+    var def = this.getComponentDef(this.createDescriptorConfig(descriptor));
 
     if (def) {
         if(!$A.clientService.allowAccess(def)) {
@@ -795,13 +895,16 @@ AuraComponentService.prototype.getDefinition = function(descriptor, callback) {
     }
 
     var action = $A.get("c.aura://ComponentController.getComponentDef");
-    action.setParams({
-        "name": descriptor
-    });
+    action.setParams({ "name": descriptor });
+
     action.setCallback(this, function (actionResponse) {
-        $A.assert(actionResponse.getState() === 'SUCCESS', "Component Definition '" + descriptor + "' was not found on the client or the server.");
-        // We use getDef at the moment so we do the access check.
-        callback(this.getDef(descriptor));
+        if(actionResponse.getState() === 'SUCCESS') {
+            // We use getDef at the moment so we do the access check.
+            callback(this.getDef(descriptor));
+        } else {
+            callback(null);
+        }
+
     });
 
     $A.enqueueAction(action);
@@ -810,29 +913,20 @@ AuraComponentService.prototype.getDefinition = function(descriptor, callback) {
 /**
  * Gets the component definition from the registry for internal use, without access checks.
  *
- * @param {String|Object} descriptor The descriptor (<code>markup://ui:scroller</code>) or other component attributes that are provided during its initialization.
+ * @param {Object} descriptor The descriptor object.
  * @returns {ComponentDef} The metadata of the component
  *
  * @private
  */
-AuraComponentService.prototype.getComponentDef = function(descriptor) {
-    $A.assert(descriptor, "No ComponentDef descriptor specified");
+AuraComponentService.prototype.getComponentDef = function(config) {
+    var descriptor = this.getDescriptorFromConfig(config);
+    var definition = this.componentDefRegistry[descriptor];
 
-    if (descriptor["descriptor"]) {
-        descriptor = descriptor["descriptor"];
-    }
-    if ($A.util.isString(descriptor) && descriptor.indexOf("://") < 0) {
-        descriptor = "markup://" + descriptor; // support shorthand
+    if (!definition && this.savedComponentConfigs[descriptor]) {
+        definition = this.createFromSavedComponentConfigs(config);
     }
 
-    var def = this.registry.getDef(descriptor);
-
-    if (!def) {
-        // check and create from saved configs
-        def = this.createFromSavedComponentConfigs(descriptor);
-    }
-
-    return def;
+    return definition;
 };
 
 /**
@@ -846,7 +940,8 @@ AuraComponentService.prototype.getComponentDef = function(descriptor) {
  * @deprecated use getDefinition(descriptor, callback) instead, it will go to the server if the definition is not present on the client.
  */
 AuraComponentService.prototype.getDef = function(descriptor) {
-    var def = this.getComponentDef(descriptor);
+    $A.assert(descriptor, "No ComponentDef descriptor specified");
+    var def = this.getComponentDef(this.createDescriptorConfig(descriptor));
 
     if (def && !$A.clientService.allowAccess(def)) {
         // #if {"excludeModes" : ["PRODUCTION","AUTOTESTING"]}
@@ -865,13 +960,16 @@ AuraComponentService.prototype.getDef = function(descriptor) {
  * @return {ComponentDef} component definition if config available
  * @private
  */
-AuraComponentService.prototype.createFromSavedComponentConfigs = function(descriptor) {
-    var def,
-        config = this.savedComponentConfigs[descriptor];
-    if (config) {
-        def = this.createDef(config);
-        delete this.savedComponentConfigs[descriptor];
+AuraComponentService.prototype.createFromSavedComponentConfigs = function(config) {
+    var descriptor = this.getDescriptorFromConfig(config);
+    var def = new ComponentDef(this.savedComponentConfigs[descriptor]);
+    this.componentDefRegistry[descriptor] = def;
+    delete this.savedComponentConfigs[descriptor];
+
+    if (this.componentDefStorage.shouldStore(descriptor)) {
+        this.componentDefStorage.storeDef(descriptor, config);
     }
+
     return def;
 };
 
@@ -881,8 +979,23 @@ AuraComponentService.prototype.createFromSavedComponentConfigs = function(descri
  * @return {ComponentDef}
  * @private
  */
-AuraComponentService.prototype.createDef = function(config) {
-    return this.registry.createDef(config);
+AuraComponentService.prototype.createComponentDef = function(config) {
+    var descriptor = this.getDescriptorFromConfig(config);
+    var definition = this.componentDefRegistry[descriptor];
+
+    if (!definition) {
+        if (this.savedComponentConfigs[descriptor]) {
+            definition = this.createFromSavedComponentConfigs(config);
+        } else {
+            definition = new ComponentDef(config);
+            this.componentDefRegistry[descriptor] = definition;
+            if (this.componentDefStorage.shouldStore(descriptor)) {
+                this.componentDefStorage.storeDef(descriptor, config);
+            }
+        }
+    }
+
+    return definition;
 };
 
 /**
@@ -905,13 +1018,12 @@ AuraComponentService.prototype.getControllerDef = function(descriptor) {
  * @return {*} Def definition
  */
 AuraComponentService.prototype.getDefFromRelationship = function(descriptor, relationshipMap, registry) {
-    var def = registry.getDef(descriptor);
+    var def = registry[descriptor];
     if (!def && relationshipMap[descriptor]) {
         var componentDefDescriptor = relationshipMap[descriptor];
         if (this.savedComponentConfigs[componentDefDescriptor]) {
             this.getDef(componentDefDescriptor);
-            // def should be in its registry once ComponentDef is created
-            def = registry.getDef(descriptor);
+            return registry[descriptor];
         }
     }
     return def;
@@ -925,9 +1037,13 @@ AuraComponentService.prototype.getDefFromRelationship = function(descriptor, rel
  * @private
  */
 AuraComponentService.prototype.createControllerDef = function(config) {
-    var def = this.controllerDefRegistry.createDef(config);
-    // delete reference when created
-    delete this.controllerDefRelationship[def.getDescriptor()];
+    var descriptor = this.getDescriptorFromConfig(config);
+    var def = this.controllerDefRegistry[descriptor];
+    if (!def) {
+        def = new ControllerDef(config);
+        delete this.controllerDefRelationship[descriptor];
+        this.controllerDefRegistry[descriptor] = def;
+    }
     return def;
 };
 
@@ -948,9 +1064,14 @@ AuraComponentService.prototype.getActionDef = function(descriptor) {
  * @private
  */
 AuraComponentService.prototype.createActionDef = function(config) {
-    var def = this.actionDefRegistry.createDef(config);
-    // delete reference when created
-    delete this.actionDefRelationship[def.getDescriptor()];
+    var descriptor = this.getDescriptorFromConfig(config);
+    var def = this.actionDefRegistry[descriptor];
+    if (!def) {
+        def = new ActionDef(config);
+        delete this.actionDefRelationship[descriptor];
+        this.actionDefRegistry[descriptor] = def;
+    }
+
     return def;
 };
 
@@ -961,7 +1082,7 @@ AuraComponentService.prototype.createActionDef = function(config) {
  * @private
  */
 AuraComponentService.prototype.getModelDef = function(descriptor) {
-    return this.modelDefRegistry.getDef(descriptor);
+    return this.modelDefRegistry[descriptor];
 };
 
 /**
@@ -971,68 +1092,14 @@ AuraComponentService.prototype.getModelDef = function(descriptor) {
  * @private
  */
 AuraComponentService.prototype.createModelDef = function(config) {
-    return this.modelDefRegistry.createDef(config);
-};
+    var descriptor = this.getDescriptorFromConfig(config);
+    var def = this.modelDefRegistry[descriptor];
+    if (!def) {
+        def = new ModelDef(config);
+        this.modelDefRegistry[descriptor] = def;
+    }
 
-/**
- * Gets the provider definition from the registry. A provider enables an abstract component definition to be used directly in markup.
- * @param {String} descriptor component descriptor for ProviderDef
- * @returns {ProviderDef} ProviderDef of component
- * @private
- */
-AuraComponentService.prototype.getProviderDef = function(descriptor) {
-    return this.providerDefRegistry.getDef(descriptor);
-};
-
-/**
- * Creates and returns ProviderDef
- * @param {String} componentDescriptor descriptor of component
- * @param {Object} config Configuration for ProviderDef
- * @returns {ProviderDef} ProviderDef from registry
- * @private
- */
-AuraComponentService.prototype.createProviderDef = function(componentDescriptor, config) {
-    return this.providerDefRegistry.createDef(componentDescriptor, config);
-};
-
-/**
- * Gets the renderer definition from the registry.
- * @param {String} componentDefDescriptor component descriptor for ProviderDef
- * @returns {RendererDef} RendererDef of component
- * @private
- */
-AuraComponentService.prototype.getRendererDef = function(componentDefDescriptor){
-    return this.rendererDefRegistry.getDef(componentDefDescriptor);
-};
-
-/**
- * Creates and returns RendererDef
- * @param {String} descriptor component descriptor for RendererDef
- * @private
- */
-AuraComponentService.prototype.createRendererDef = function(descriptor) {
-    return this.rendererDefRegistry.createDef(descriptor);
-};
-
-/**
- * Gets the helper definition from the registry.
- * @param {String} componentDescriptor component descriptor for ProviderDef
- * @returns {HelperDef} RendererDef of component
- * @private
- */
-AuraComponentService.prototype.getHelperDef = function(componentDescriptor) {
-    return this.helperDefRegistry.getDef(componentDescriptor);
-};
-
-/**
- * Creates and returns HelperDef
- * @param {ComponentDef} componentDef component definition
- * @param {Object} libraries library defs map
- * @returns {HelperDef}
- * @private
- */
-AuraComponentService.prototype.createHelperDef = function(componentDef, libraries) {
-    return this.helperDefRegistry.createDef(componentDef, libraries);
+    return def;
 };
 
 /**
@@ -1041,8 +1108,8 @@ AuraComponentService.prototype.createHelperDef = function(componentDef, librarie
  * @returns {Object} library from registry
  * @private
  */
-AuraComponentService.prototype.getLibraryDef = function(descriptor, libraryDef){
-    return this.libraryDefRegistry.getDef(descriptor, libraryDef);
+AuraComponentService.prototype.getLibraryDef = function(descriptor) {
+    return this.libraryDefRegistry.getDef(descriptor);
 };
 
 /**
@@ -1090,7 +1157,7 @@ AuraComponentService.prototype.getRegisteredComponentDescriptors = function(){
     var ret = [];
     var name;
 
-    var componentDefs = this.registry.componentDefs;
+    var componentDefs = this.componentDefRegistry;
     for (name in componentDefs) {
         ret.push(name);
     }
@@ -1102,7 +1169,7 @@ AuraComponentService.prototype.getRegisteredComponentDescriptors = function(){
  * Get the dynamic namespaces defined by 'layout://name'
  */
 AuraComponentService.prototype.getDynamicNamespaces = function(){
-    return this.registry.dynamicNamespaces;
+    return this.dynamicNamespaces;
 };
 
 /**
@@ -1155,8 +1222,11 @@ AuraComponentService.prototype.isConfigDescriptor = function(config) {
  * @param {Object} config component definition config
  */
 AuraComponentService.prototype.saveComponentConfig = function(config) {
-    $A.assert(config && config["descriptor"], "ComponentDef config required for registration");
-    var componentDescriptor = config["descriptor"];
+    var componentDescriptor = this.getDescriptorFromConfig(config);
+    if (this.savedComponentConfigs[componentDescriptor]) {
+        return;
+    }
+
     this.savedComponentConfigs[componentDescriptor] = config;
 
     var controllerDef = config["controllerDef"];
@@ -1165,10 +1235,11 @@ AuraComponentService.prototype.saveComponentConfig = function(config) {
             // save reference to component descriptor for ControllerDef
             this.controllerDefRelationship[controllerDef["descriptor"]] = componentDescriptor;
         }
+
         if (controllerDef["actionDefs"]) {
-            var i,
-                actionDefs = controllerDef["actionDefs"],
-                len = actionDefs.length;
+            var actionDefs = controllerDef["actionDefs"],
+                len = actionDefs.length,
+                i;
 
             for (i = 0; i < len; i++) {
                 // loop and save reference to ComponentDef descriptor for each ActionDef
@@ -1179,6 +1250,52 @@ AuraComponentService.prototype.saveComponentConfig = function(config) {
             }
         }
     }
+};
+
+/**
+ * Asynchronously retrieves all definitions in storage and adds to localStorage
+ */
+AuraComponentService.prototype.restoreDefsFromStorage = function () {
+    this.componentDefStorage.restoreAllFromStorage();
+};
+
+/**
+ * Clears storage
+ * @return {Promise} Promise when storage is cleared
+ */
+AuraComponentService.prototype.clearDefsFromStorage = function () {
+    return this.componentDefStorage.clearAllFromStorage();
+};
+
+AuraComponentService.prototype.createComponentPrivAsync = function (config, callback, forceClientCreation) {
+    var descriptor = this.getDescriptorFromConfig(config["componentDef"]);
+    var def = this.getComponentDef({ "descriptor" : descriptor });
+    var action;
+    $A.assert(callback && typeof callback === 'function' , 'Callback');
+
+    if (def && (!def.hasRemoteDependencies() || forceClientCreation)) {
+        var classConstructor = this.getComponentClass(descriptor);
+        if (!classConstructor) {
+            throw new Error("Component class not found: " + descriptor);
+        }
+
+        callback(new classConstructor(config, forceClientCreation), 'SUCCESS');
+        return action;
+    }
+
+    action = this.requestComponent(this, callback, config);
+    action.setAbortable(true);
+    $A.enqueueAction(action);
+    return action;
+};
+
+AuraComponentService.prototype.createComponentPriv = function (config) {
+    var descriptor = this.getDescriptorFromConfig(config["componentDef"]);
+    var def = this.getComponentDef({ "descriptor" : descriptor });
+    $A.assert(def, 'Definition does not exist on the client');
+
+    var classConstructor = this.getComponentClass(descriptor);
+    return new classConstructor(config);
 };
 
 Aura.Services.AuraComponentService = AuraComponentService;

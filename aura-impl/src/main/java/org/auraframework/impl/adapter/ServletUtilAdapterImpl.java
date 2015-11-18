@@ -17,38 +17,31 @@ package org.auraframework.impl.adapter;
 
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
+import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import aQute.bnd.annotation.component.Component;
+
 import org.apache.http.HttpHeaders;
 import org.apache.http.HttpStatus;
 import org.auraframework.Aura;
-import org.auraframework.adapter.ConfigAdapter;
-import org.auraframework.adapter.ContentSecurityPolicy;
-import org.auraframework.adapter.ExceptionAdapter;
-import org.auraframework.adapter.ServletUtilAdapter;
-import org.auraframework.def.BaseComponentDef;
-import org.auraframework.def.ClientLibraryDef;
-import org.auraframework.def.DefDescriptor;
+import org.auraframework.adapter.*;
+import org.auraframework.def.*;
 import org.auraframework.def.DefDescriptor.DefType;
 import org.auraframework.ds.serviceloader.AuraServiceProvider;
 import org.auraframework.http.CSP;
 import org.auraframework.instance.InstanceStack;
+import org.auraframework.service.ContextService;
 import org.auraframework.service.DefinitionService;
-import org.auraframework.system.AuraContext;
+import org.auraframework.service.SerializationService;
+import org.auraframework.system.*;
 import org.auraframework.system.AuraContext.Format;
 import org.auraframework.system.AuraContext.Mode;
-import org.auraframework.system.AuraResource;
-import org.auraframework.system.MasterDefRegistry;
-import org.auraframework.throwable.AuraUnhandledException;
-import org.auraframework.throwable.ClientOutOfSyncException;
-import org.auraframework.throwable.NoAccessException;
+import org.auraframework.throwable.*;
 import org.auraframework.throwable.quickfix.DefinitionNotFoundException;
 import org.auraframework.throwable.quickfix.QuickFixException;
 import org.auraframework.util.AuraTextUtil;
@@ -57,10 +50,12 @@ import org.auraframework.util.json.JsonEncoder;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
-import aQute.bnd.annotation.component.Component;
-
 @Component (provide=AuraServiceProvider.class)
 public class ServletUtilAdapterImpl implements ServletUtilAdapter {
+    private ContextService contextSerivce = Aura.getContextService();
+    private ConfigAdapter configAdapter = Aura.getConfigAdapter();
+    private ExceptionAdapter exceptionAdapter = Aura.getExceptionAdapter();
+    private SerializationService serializationService = Aura.getSerializationService();
     protected DefinitionService definitionService = Aura.getDefinitionService();
 
     /**
@@ -148,14 +143,13 @@ public class ServletUtilAdapterImpl implements ServletUtilAdapter {
                     //
                     // Note that the exception handler can remap the cause here.
                     //
-                    cause = Aura.getExceptionAdapter().handleException(cause);
+                    cause = exceptionAdapter.handleException(cause);
                     denyMessage += ": cause = " + cause.getMessage();
                 }
                 //
                 // Is this correct?!?!?!
                 //
                 if (format != Format.JSON) {
-                    send404(request, response);
                     if (!isProductionMode(context.getMode())) {
                         // Preserve new lines and tabs in the stacktrace since this is directly being written on to the
                         // page
@@ -176,7 +170,6 @@ public class ServletUtilAdapterImpl implements ServletUtilAdapter {
 
                         if (dnfe.getDescriptor() != null
                                 && dnfe.getDescriptor().equals(context.getApplicationDescriptor())) {
-                            send404(request, response);
                             return;
                         }
                     }
@@ -185,7 +178,7 @@ public class ServletUtilAdapterImpl implements ServletUtilAdapter {
                 }
             }
             if (map) {
-                mappedEx = Aura.getExceptionAdapter().handleException(mappedEx);
+                mappedEx = exceptionAdapter.handleException(mappedEx);
             }
 
             PrintWriter out = response.getWriter();
@@ -228,13 +221,13 @@ public class ServletUtilAdapterImpl implements ServletUtilAdapter {
                 //
                 // Clear the InstanceStack before trying to serialize the exception since the Throwable has likely
                 // rendered the stack inaccurate, and may falsely trigger NoAccessExceptions.
-                InstanceStack stack = Aura.getContextService().getCurrentContext().getInstanceStack();
+                InstanceStack stack = this.contextSerivce.getCurrentContext().getInstanceStack();
                 List<String> list = stack.getStackInfo();
                 for (int count = list.size(); count > 0; count--) {
                     stack.popInstance(stack.peek());
                 }
 
-                Aura.getSerializationService().write(mappedEx, null, out);
+                serializationService.write(mappedEx, null, out);
                 if (format == Format.JSON) {
                     out.write("/*ERROR*/");
                 }
@@ -249,7 +242,7 @@ public class ServletUtilAdapterImpl implements ServletUtilAdapter {
             //
             try {
                 response.setStatus(HttpStatus.SC_INTERNAL_SERVER_ERROR);
-                Aura.getExceptionAdapter().handleException(death);
+                exceptionAdapter.handleException(death);
                 if (!isProductionMode(context.getMode())) {
                     response.getWriter().println(death.getMessage());
                 }
@@ -262,12 +255,12 @@ public class ServletUtilAdapterImpl implements ServletUtilAdapter {
                 }
             }
         } finally {
-            Aura.getContextService().endContext();
+            this.contextSerivce.endContext();
         }
     }
 
     @Override
-    public void send404(HttpServletRequest request, HttpServletResponse response) throws IOException {
+    public void send404(ServletConfig config, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
         response.setStatus(HttpServletResponse.SC_NOT_FOUND);
         response.getWriter().println("404 Not Found"
                 + "<!-- Extra text so IE will display our custom 404 page -->"
@@ -279,7 +272,7 @@ public class ServletUtilAdapterImpl implements ServletUtilAdapter {
                 + "<!--                                                   -->"
                 + "<!--                                                   -->"
                 + "<!--                                                   -->");
-        Aura.getContextService().endContext();
+        this.contextSerivce.endContext();
     }
 
     @Override
@@ -326,19 +319,18 @@ public class ServletUtilAdapterImpl implements ServletUtilAdapter {
      */
     @Override
     public List<String> getBaseScripts(AuraContext context) throws QuickFixException {
-        ConfigAdapter config = Aura.getConfigAdapter();
         Set<String> ret = Sets.newLinkedHashSet();
 
-        String html5ShivURL = config.getHTML5ShivURL();
+        String html5ShivURL = configAdapter.getHTML5ShivURL();
         if (html5ShivURL != null) {
             ret.add(html5ShivURL);
         }
 
-        ret.add(config.getJSLibsURL());
+        ret.add(configAdapter.getJSLibsURL());
 
         ret.addAll(getClientLibraryUrls(context, ClientLibraryDef.Type.JS));
         // framework js should be after other client libraries
-        ret.add(config.getAuraJSURL());
+        ret.add(configAdapter.getAuraJSURL());
 
         return new ArrayList<>(ret);
     }
@@ -382,7 +374,7 @@ public class ServletUtilAdapterImpl implements ServletUtilAdapter {
      */
     @Override
     public boolean isProductionMode(Mode mode) {
-        return mode == Mode.PROD || Aura.getConfigAdapter().isProduction();
+        return mode == Mode.PROD || configAdapter.isProduction();
     }
 
     /**
@@ -390,7 +382,7 @@ public class ServletUtilAdapterImpl implements ServletUtilAdapter {
      */
     @Override
     public void setCSPHeaders(DefDescriptor<?> top, HttpServletRequest req, HttpServletResponse rsp) {
-        ContentSecurityPolicy csp = Aura.getConfigAdapter().getContentSecurityPolicy(
+        ContentSecurityPolicy csp = configAdapter.getContentSecurityPolicy(
                 top == null ? null : top.getQualifiedName(), req);
 
         if (csp != null) {
@@ -485,12 +477,12 @@ public class ServletUtilAdapterImpl implements ServletUtilAdapter {
     }
 
     @Override
-    public boolean actionServletGetPre(HttpServletRequest request, HttpServletResponse response) {
+    public boolean actionServletGetPre(HttpServletRequest request, HttpServletResponse response) throws IOException {
         return false;
     }
 
     @Override
-    public boolean actionServletPostPre(HttpServletRequest request, HttpServletResponse response) {
+    public boolean actionServletPostPre(HttpServletRequest request, HttpServletResponse response) throws IOException {
         return false;
     }
 
@@ -580,5 +572,33 @@ public class ServletUtilAdapterImpl implements ServletUtilAdapter {
      */
     public void setDefinitionService(DefinitionService definitionService) {
         this.definitionService = definitionService;
+    }
+
+    /**
+     * Injection override.
+     */
+    public void setContextService(ContextService contextService) {
+        this.contextSerivce = contextService;
+    }
+
+    /**
+     * Injection override.
+     */
+    public void setConfigAdapter(ConfigAdapter configAdapter) {
+        this.configAdapter = configAdapter;
+    }
+
+    /**
+     * Injection override.
+     */
+    public void setExceptionAdapter(ExceptionAdapter exceptionAdapter) {
+        this.exceptionAdapter = exceptionAdapter;
+    }
+
+    /**
+     * Injection override.
+     */
+    public void setSerializationService(SerializationService serializationService) {
+        this.serializationService = serializationService;
     }
 }

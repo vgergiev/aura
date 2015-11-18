@@ -404,6 +404,94 @@
             }
         }
     },
+    
+    /*
+     * Column Resizer Plugin
+     */
+    
+    enableColumnResizer : function(cmp) {
+    	$A.util.toggleClass(cmp, 'resizable-cols', true);
+    	var configs = cmp.get("v.resizableColumnsConfig") || {};
+    	configs.indicatorClasses = configs.indicatorClasses ? configs.indicatorClasses += ' uiVirtualDataGrid' : 'uiVirtualDataGrid';
+    	
+		var resizer = this.lib.columnResize.initializeColumnResizer(cmp.getElement(), configs);
+		
+		this.attachColResizerHandlers(cmp, resizer);
+		
+		cmp.getConcreteComponent()._colResizer = resizer;
+		this.updateResizerAccessibilityLabels(cmp);
+    },
+    
+    getResizer : function(cmp) {
+    	return cmp.getConcreteComponent()._colResizer;
+    },
+    
+    updateColumnResizer : function(cmp) {
+    	this.getResizer(cmp).updateColumns();
+    	this.updateResizerAccessibilityLabels(cmp);
+    },
+    
+    updateResizerAccessibilityLabels : function(cmp) {
+    	var resizer = this.getResizer(cmp);
+    	if (resizer) {
+    		var columns = cmp.get("v.headerColumns");
+        	
+        	var labels = [];
+        	for (var i = 0; i < columns.length; i++) {
+        		labels[i] = columns[i].get("v.label");
+        	}
+        	
+        	resizer.updateAccessibilityLabels(labels);
+    	}
+    },
+    
+    /**
+     * Configures the resizer after it's been created
+     */
+    attachColResizerHandlers: function(cmp, resizer) {  
+    	
+    	// Attach event handlers
+    	resizer.on('resize', $A.getCallback(function(resizeData) {
+    		if (cmp.isValid()) {
+    			var header = cmp.get("v.headerColumns")[resizeData.index];
+    			if (header) {
+    				header.set("v.width", resizeData.width);
+    			}
+    		}
+    	}));
+    	
+    	resizer.on('resize', $A.getCallback(function () {
+    		if (cmp.isValid()) {
+    			var resizeData = arguments[0];
+    			cmp.getEvent("onColumnResize").setParams({
+    				src : {
+    					colIndex : resizeData.index,
+    					column : cmp.get("v.headerColumns")[resizeData.index]
+    				},
+    				newSize : resizeData.width
+    			}).fire();
+    		}
+        }));
+    },
+    
+    resizeColumns : function(cmp, widths) {
+    	if (widths && widths.length > 0) {
+    		cmp._colResizer.resizeAll(widths);
+    	}
+    },
+    
+    /**
+     * Checks if all column headers have resize handles.
+     * 
+     * We hopefully won't need to do this anymore once dataGridColumn is refactored and we can let Aura
+     * rerender the resizer handles natively. 
+     */
+    hasResizerHandles : function(cmp) {
+    	var handles = cmp.find("thead").getElement().querySelectorAll(".handle").length;
+    	var headers = cmp.get("v.headerColumns").length;
+    	return handles === headers;
+    },
+    
     destroyTemplates: function (cmp) {
         var tmpls = cmp._templates;
         for (var i = 0; i < tmpls.length; ++i) {

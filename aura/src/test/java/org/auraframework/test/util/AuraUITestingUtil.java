@@ -640,34 +640,6 @@ public class AuraUITestingUtil {
     }
 
     /**
-     * Get the quick fix title.
-     */
-    public String getQuickFixTitle() {
-        WebElement toolBar = driver.findElement(By.className("toolbar"));
-        if (toolBar == null) {
-            // This is actually ok, as the box is not rendered if the cause is not present
-            // In this case return an empty string.
-            return "";
-        }
-        return toolBar.getText();
-    }
-
-    /**
-     * Get any 'cause' message from a quick fix exception
-     *
-     * @return the quick fix cause exception.
-     */
-    public String getQuickFixCause() {
-        WebElement errorBox = driver.findElement(By.className("causeWrapper"));
-        if (errorBox == null) {
-            // This is actually ok, as the box is not rendered if the cause is not present
-            // In this case return an empty string.
-            return "";
-        }
-        return errorBox.getText();
-    }
-
-    /**
      * @return true if Aura framework has loaded
      */
     public boolean isAuraFrameworkReady() {
@@ -826,10 +798,12 @@ public class AuraUITestingUtil {
      * {@link #waitForDocumentReady()}.
      */
     public void waitForAuraFrameworkReady(final Set<String> expectedErrors) {
+        String doNotAssign = "\nThis message means, you aren't even on Aura application at this point. " +
+                "Please do not assign this test failure to Aura team/s unless, Aura team/s is the owner of this test. ";
         WebDriverWait waitAuraPresent = new WebDriverWait(driver, timeoutInSecs);
-        waitAuraPresent.withMessage("Initialization error: Perhaps the initial GET failed")
-        .until(
-                new Function<WebDriver, Boolean>() {
+        waitAuraPresent.withMessage("Initialization error: Perhaps the initial GET failed." + doNotAssign)
+                .until(
+                        new Function<WebDriver, Boolean>() {
                     @Override
                     public Boolean apply(WebDriver input) {
                         return (Boolean) getRawEval("return !!window.$A");

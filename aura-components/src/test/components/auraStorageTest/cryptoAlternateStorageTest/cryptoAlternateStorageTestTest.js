@@ -6,8 +6,8 @@
 
     setUp : function(cmp) {
         $A.test.overrideFunction($A.storageService, "selectAdapter", function() { return "crypto"; });
-        CryptoAdapter.register();
-        if (!$A.storageService.isRegisteredAdapter(CryptoAdapter.NAME)) {
+        $A.storageService.CryptoAdapter.register();
+        if (!$A.storageService.isRegisteredAdapter($A.storageService.CryptoAdapter.NAME)) {
             $A.test.fail("CryptoAdapter failed to register. You must run these tests against localhost or with HTTPS (see http://sfdc.co/bO9Hok).");
         }
 
@@ -15,7 +15,7 @@
         $A.test.addCleanup(function(){ $A.storageService.deleteStorage("crypto-store"); });
 
         // provide an invalid key to force CryptoAdapter into fallback mode (which uses memory adapter internally)
-        CryptoAdapter.setKey("invalid");
+        $A.storageService.CryptoAdapter.setKey("invalid");
     },
 
     testFallbackModeReported: {
@@ -24,7 +24,7 @@
             cmp.helper.lib.storageTest.testGetNullValue(cmp, this.storage);
         },
         function(cmp){
-            $A.test.assertFalse(this.storage.adapter.isCrypto(), "CryptoAdapter should be in fallback mode");
+            $A.test.assertFalse(this.storage.isPersistent(), "CryptoAdapter should be in fallback mode so not persistent");
         }]
     },
 
@@ -130,12 +130,28 @@
         }
     },
 
+    testCacheMiss: {
+        test: function(cmp) {
+            cmp.helper.lib.storageTest.testCacheMiss(cmp, this.storage);
+        }
+    },
+
     testSetItemOverMaxSize : {
         test : [function(cmp) {
             cmp.helper.lib.storageTest.testSetItemOverMaxSize_stage1(cmp, this.storage, "Item larger than size limit");
         },
         function(cmp) {
             cmp.helper.lib.storageTest.testSetItemOverMaxSize_stage2(cmp, this.storage);
+        }]
+    },
+
+    testReplaceExistingWithEntryTooLarge: {
+        test: [
+        function putItemThenReplaceWithEntryTooLarge(cmp) {
+            cmp.helper.lib.storageTest.testReplaceExistingWithEntryTooLarge_stage1(cmp, this.storage);
+        },
+        function getItem(cmp) {
+            cmp.helper.lib.storageTest.testReplaceExistingWithEntryTooLarge_stage2(cmp, this.storage);
         }]
     },
 
@@ -180,11 +196,17 @@
             }]
     },
 
-    // testOverflow: memory doesn't need overflow test
-
     testGetAll: {
         test: function(cmp) {
             cmp.helper.lib.storageTest.testGetAll(cmp, this.storage);
+        }
+    },
+
+    testOverflow: {
+        test: function(cmp) {
+            var storage = this.createStorage("crypto-store-overflow", 5000, 2000, 3000);
+            $A.test.addCleanup(function(){ $A.storageService.deleteStorage("crypto-store-overflow"); });
+            cmp.helper.lib.storageTest.testOverflow(cmp, storage);
         }
     },
 
@@ -198,9 +220,13 @@
     },
 
     testStorageInfo: {
-        test: function(cmp) {
-            cmp.helper.lib.storageTest.testStorageInfo(this.storage, true, true);
-        }
+        test:[function(cmp){
+            // do a get so next test stage is run after adapter finishes initializing
+            cmp.helper.lib.storageTest.testGetNullValue(cmp, this.storage);
+        },
+        function(cmp){
+            cmp.helper.lib.storageTest.testStorageInfo(this.storage, false, true);
+        }]
     },
 
     createStorage: function(name, maxSize, defaultExpiration, defaultAutoRefreshInterval) {

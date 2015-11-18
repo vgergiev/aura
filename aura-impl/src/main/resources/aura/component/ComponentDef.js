@@ -27,10 +27,8 @@
 function ComponentDef(config) {
     var descriptor = new DefDescriptor(config["descriptor"]);
     this.descriptor = descriptor;
-    if (config["hasServerDeps"]) {
-        this.hasRemoteDeps = true;
-    }
-    this.access=config[Json.ApplicationKey.ACCESS];
+    this.hasRemoteDeps = config["hasServerDeps"] || false;
+    this.access = config[Json.ApplicationKey.ACCESS];
     delete config[Json.ApplicationKey.ACCESS];
 
     this.superDef = this.initSuperDef(config["superDef"]);
@@ -132,21 +130,6 @@ function ComponentDef(config) {
         }
     }
 
-    var imports = config["imports"];
-    if (imports) {
-        this.libraryDefs = {};
-        var imp, lib;
-        for (var l = 0, len = imports.length; l < len; l++) {
-            imp = imports[l];
-            if (imp["libraryDef"]) {
-                lib = $A.componentService.createLibraryDef(imp["libraryDef"]);
-            } else {
-                lib = $A.componentService.getLibraryDef(imp["name"]);
-            }
-            this.libraryDefs[imp["property"]] = lib;
-        }
-    }
-
     this.appHandlerDefs = appHandlerDefs || null;
     this.cmpHandlerDefs = cmpHandlerDefs || null;
     this.valueHandlerDefs = valueHandlerDefs || null;
@@ -169,18 +152,7 @@ function ComponentDef(config) {
 
     this.attributeDefs = new AttributeDefSet(config["attributeDefs"],this.descriptor.getNamespace());
     this.requiredVersionDefs = new RequiredVersionDefSet(config["requiredVersionDefs"]);
-
-    this.rendererDef = $A.componentService.createRendererDef(descriptor.getQualifiedName());
-    this.initRenderer();
-
-    this.helperDef = $A.componentService.createHelperDef(this, this.libraryDefs);
-
-    var providerDef = config["providerDef"];
-    if (providerDef) {
-        this.providerDef = $A.componentService.createProviderDef(descriptor.getQualifiedName(), providerDef);
-    } else {
-        this.providerDef = null;
-    }
+    this.initStyleDefs();
 }
 
 /**
@@ -217,37 +189,16 @@ ComponentDef.prototype.getSuperDef = function() {
 };
 
 /**
- * Returns a HelperDef object.
- *
- * @returns {HelperDef}
- * @export
- */
-ComponentDef.prototype.getHelperDef = function() {
-    return this.helperDef;
-};
-
-/**
- * Gets the Helper instance
+ * Gets the Helper instance. This method is for backward compatibility,
+ * the helper is now an integral part of the component class.
  *
  * @returns {Helper}
  * @export
  */
 ComponentDef.prototype.getHelper = function() {
-    var def = this.getHelperDef();
-    if (def) {
-        return def.getFunctions();
-    }
-    return def;
-};
-
-/**
- * Returns a RendererDef object.
- *
- * @returns {RendererDef}
- * @export
- */
-ComponentDef.prototype.getRendererDef = function() {
-    return this.rendererDef;
+    var name = this.getDescriptor().getQualifiedName();
+    var componentClass = $A.componentService.getComponentClass(name);
+    return componentClass ? componentClass.prototype["helper"] : undefined;
 };
 
 /**
@@ -267,23 +218,6 @@ ComponentDef.prototype.getRequiredVersionDefs = function() {
  */
 ComponentDef.prototype.hasRemoteDependencies = function() {
     return this.hasRemoteDeps;
-};
-
-/**
- * @private
- */
-ComponentDef.prototype.getRenderingDetails = function() {
-    return this.renderingDetails;
-};
-
-/**
- * Returns a ProviderDef object associated with this ComponentDef.
- *
- * @returns {ProviderDef}
- * @export
- */
-ComponentDef.prototype.getProviderDef = function() {
-    return this.providerDef;
 };
 
 /**
@@ -651,47 +585,28 @@ ComponentDef.prototype.getLayouts = function() {
  */
 ComponentDef.prototype.initSuperDef = function(config) {
     if (config) {
-        var descriptor = config;
-        if (config["descriptor"]) {
-            descriptor = config["descriptor"];
-        }
-        // config could either be for a new component or for an existing def so we need to check first
-        var sDef = $A.componentService.getComponentDef(descriptor);
-        if (!sDef) {
-            sDef = $A.componentService.createDef(config);
-        }
-        $A.assert(sDef, "Super def undefined for " + this.descriptor + " value = " + descriptor);
+        var sDef = $A.componentService.createComponentDef(config);
+        $A.assert(sDef, "Super def undefined for " + this.descriptor + " value = " + config["descriptor"]);
         return sDef;
     }
+
     return null;
 };
 
 /**
- * Setup the style defs and renderer details.
+ * Setup the style defs details.
  *
  * Note that the style defs are in reverse order so that they get applied in
  * forward order.
  *
  * @private
  */
-ComponentDef.prototype.initRenderer = function() {
-    var rd = {
-        distance : 0,
-        rendererDef : this.rendererDef
-    };
+ComponentDef.prototype.initStyleDefs = function() {
     this.allStyleDefs = [];
     this.allFlavoredStyleDefs = [];
 
     var s = this.superDef;
     if (s) {
-        if (!this.rendererDef) {
-            // no rendererdef, get the superdefs
-            var superStuff = s.getRenderingDetails();
-            if (superStuff) {
-                rd.rendererDef = superStuff.rendererDef;
-                rd.distance = superStuff.distance + 1;
-            }
-        }
         var superStyles = s.getAllStyleDefs();
         if (superStyles) {
             this.allStyleDefs = this.allStyleDefs.concat(superStyles);
@@ -707,16 +622,6 @@ ComponentDef.prototype.initRenderer = function() {
     if (this.flavoredStyleDef) {
         this.allFlavoredStyleDefs.push(this.flavoredStyleDef);
     }
-    if (!rd.rendererDef) {
-        //
-        // If we don't have a renderer, make sure we mark that here. Note
-        // that we can't assert that we have a renderer, because sometimes
-        // there are component defs that don't, maybe the server shouldn't
-        // send them down, as they cannot be instantiated on the client.
-        //
-        rd = undefined;
-    }
-    this.renderingDetails = rd;
 };
 
 Aura.Component.ComponentDef = ComponentDef;

@@ -170,6 +170,9 @@
      * our actions using resume and wait. Be careful of deadlocks.
      */
     testMultipleForegroundInFlight : {
+        // FIXME: Figure out why this fails on Jenkins. Try increasing timeout for now. From screenshots looks like
+        //        only 3 of the 4 actions comes back and is logged. Cannot repo locally.
+        labels: ["flapper"],
         test : [
             function(cmp) {
                 // fire first foreground action that waits for trigger

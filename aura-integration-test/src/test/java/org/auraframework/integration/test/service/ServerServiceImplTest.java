@@ -45,6 +45,7 @@ import org.auraframework.def.DefinitionAccess;
 import org.auraframework.def.TypeDef;
 import org.auraframework.def.ValueDef;
 import org.auraframework.impl.AuraImplTestCase;
+import org.auraframework.impl.adapter.ServletUtilAdapterImpl;
 import org.auraframework.instance.AbstractActionImpl;
 import org.auraframework.instance.Action;
 import org.auraframework.instance.ActionDelegate;
@@ -62,10 +63,8 @@ import org.auraframework.system.Message;
 import org.auraframework.system.SubDefDescriptor;
 import org.auraframework.throwable.AuraExecutionException;
 import org.auraframework.throwable.quickfix.QuickFixException;
-import org.auraframework.util.ServiceLoader;
 import org.auraframework.util.json.Json;
 import org.auraframework.util.json.JsonReader;
-import org.auraframework.util.test.util.ServiceLocatorMocker;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
@@ -541,7 +540,7 @@ public class ServerServiceImplTest extends AuraImplTestCase {
         // order should be exactly that above.
         // child1, grandparent, parent, child2
         //
-        assertTrue("parent CSS should be written before child CSS in: " + css,
+        assertTrue("child CSS should be written before grandparent CSS in: " + css,
                 css.indexOf(".setAttributesTestChild") < css.indexOf(".setAttributesTestGrandparent"));
         assertTrue("grandparent CSS should be written before parent CSS in: " + css,
                 css.indexOf(".setAttributesTestGrandparent") < css.indexOf(".setAttributesTestParent"));
@@ -655,43 +654,6 @@ public class ServerServiceImplTest extends AuraImplTestCase {
     }
 
     /**
-     * If a component extends the root component and doesn't implement it's own unrender function it should get a
-     * special default unrender function in it's component class.
-     */
-    public void testComponentClassUnrenderWhenExtendsRootComponent()
-            throws Exception {
-        String defaultUnrender = "if(elements){while(elements.length){$A.util.removeElement(elements.pop());}}this.disassociateElements();";
-
-        String js = getDefinitionsOutput(
-                "<aura:application></aura:application>", AuraContext.Mode.DEV);
-        int index = js.indexOf("aura$text.prototype.unrender");
-        String unrenderFunction = js.substring(index, index + 500).replaceAll(
-                "\\s+", "");
-
-        assertTrue(
-                "Default unrender function should be used when component extends the root component but was <"
-                        + unrenderFunction + ">",
-                        unrenderFunction.contains(defaultUnrender));
-    }
-
-    /**
-     * Verify when a component implements its own unrender function, that function overrides the default.
-     */
-    public void testComponentClassUnrenderDefaultOverriden() throws Exception {
-        String defaultUnrender = "if(elements){while(elements.length){$A.util.removeElement(elements.pop());}}this.disassociateElements();";
-
-        String js = getDefinitionsOutput(
-                "<aura:application></aura:application>", AuraContext.Mode.DEV);
-        int index = js.indexOf("aura$html.prototype.unrender");
-        String unrenderFunction = js.substring(index, index + 500).replaceAll(
-                "\\s+", "");
-
-        assertFalse(
-                "Default unrender function should be overriden if component defines its own unrender",
-                unrenderFunction.contains(defaultUnrender));
-    }
-
-    /**
      * When we write out the application javascript we should only include component classes once per component.
      */
     public void testNoComponentClassDuplicate() throws Exception {
@@ -773,40 +735,35 @@ public class ServerServiceImplTest extends AuraImplTestCase {
      * so it doesn't cache in browser, appcache, etc
      */
     public void testHandleInterruptedException() throws Exception {
-        try {
-            PrintWriter writer = mock(PrintWriter.class);
-            HttpServletRequest mockRequest = mock(HttpServletRequest.class);
-            HttpServletResponse mockResponse = mock(HttpServletResponse.class);
-            ContextService mockContextService = mock(ContextService.class);
-            AuraContext mockContext = mock(AuraContext.class);
-            ConfigAdapter mockConfigAdapter = mock(ConfigAdapter.class);
-            InstanceStack mockInstanceStack = mock(InstanceStack.class);
-            List<String> stack = Lists.newArrayList();
-            SerializationService mockSerializationService = mock(SerializationService.class);
+        PrintWriter writer = mock(PrintWriter.class);
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        HttpServletResponse mockResponse = mock(HttpServletResponse.class);
+        ContextService mockContextService = mock(ContextService.class);
+        AuraContext mockContext = mock(AuraContext.class);
+        ConfigAdapter mockConfigAdapter = mock(ConfigAdapter.class);
+        InstanceStack mockInstanceStack = mock(InstanceStack.class);
+        List<String> stack = Lists.newArrayList();
+        SerializationService mockSerializationService = mock(SerializationService.class);
 
-            ServiceLoader locator = ServiceLocatorMocker.spyOnServiceLocator();
-            Mockito.when(locator.get(ContextService.class)).thenReturn(mockContextService);
-            Mockito.when(locator.get(ConfigAdapter.class)).thenReturn(mockConfigAdapter);
-            Mockito.when(locator.get(SerializationService.class)).thenReturn(mockSerializationService);
+        Mockito.when(mockResponse.getWriter()).thenReturn(writer);
+        // for JS, SC_INTERNAL_SERVER_ERROR
+        Mockito.when(mockContext.getFormat()).thenReturn(AuraContext.Format.JS);
+        Mockito.when(mockContext.getMode()).thenReturn(Mode.PROD);
+        Mockito.when(mockContext.getInstanceStack()).thenReturn(mockInstanceStack);
+        Mockito.when(mockConfigAdapter.isProduction()).thenReturn(true);
+        Mockito.when(mockInstanceStack.getStackInfo()).thenReturn(stack);
+        Mockito.when(mockContextService.getCurrentContext()).thenReturn(mockContext);
 
-            Mockito.when(mockResponse.getWriter()).thenReturn(writer);
-            // for JS, SC_INTERNAL_SERVER_ERROR
-            Mockito.when(mockContext.getFormat()).thenReturn(AuraContext.Format.JS);
-            Mockito.when(mockContext.getMode()).thenReturn(Mode.PROD);
-            Mockito.when(mockContext.getInstanceStack()).thenReturn(mockInstanceStack);
-            Mockito.when(mockConfigAdapter.isProduction()).thenReturn(true);
-            Mockito.when(mockInstanceStack.getStackInfo()).thenReturn(stack);
-            Mockito.when(mockContextService.getCurrentContext()).thenReturn(mockContext);
+        Throwable exception = new InterruptedException("opps");
 
-            Throwable exception = new InterruptedException("opps");
+        ServletUtilAdapterImpl adapter = new ServletUtilAdapterImpl();
+        adapter.setContextService(mockContextService);
+        adapter.setConfigAdapter(mockConfigAdapter);
+        adapter.setSerializationService(mockSerializationService);
+        adapter.handleServletException(exception, true, mockContext, mockRequest, mockResponse, true);
 
-            Aura.getServletUtilAdapter().handleServletException(exception, true, mockContext, mockRequest, mockResponse, true);
-
-            Mockito.verify(mockResponse).setStatus(HttpStatus.SC_INTERNAL_SERVER_ERROR);
-            Mockito.verify(mockContextService, atLeastOnce()).endContext();
-        } finally {
-            ServiceLocatorMocker.unmockServiceLocator();
-        }
+        Mockito.verify(mockResponse).setStatus(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+        Mockito.verify(mockContextService, atLeastOnce()).endContext();
     }
 
     /**
@@ -815,43 +772,38 @@ public class ServerServiceImplTest extends AuraImplTestCase {
      * Aura.getExceptionAdapter().handleException(death) is called with it
      */
     public void testHandleExceptionDeathCaught() throws Exception {
-        try {
-            PrintWriter writer = mock(PrintWriter.class);
-            HttpServletRequest mockRequest = mock(HttpServletRequest.class);
-            HttpServletResponse mockResponse = mock(HttpServletResponse.class);
-            ContextService mockContextService = mock(ContextService.class);
-            AuraContext mockContext = mock(AuraContext.class);
-            ConfigAdapter mockConfigAdapter = mock(ConfigAdapter.class);
-            ExceptionAdapter mockExceptionAdapter = mock(ExceptionAdapter.class);
+        PrintWriter writer = mock(PrintWriter.class);
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        HttpServletResponse mockResponse = mock(HttpServletResponse.class);
+        ContextService mockContextService = mock(ContextService.class);
+        AuraContext mockContext = mock(AuraContext.class);
+        ConfigAdapter mockConfigAdapter = mock(ConfigAdapter.class);
+        ExceptionAdapter mockExceptionAdapter = mock(ExceptionAdapter.class);
 
-            Throwable firstException = new EmptyStackException();
+        Throwable firstException = new EmptyStackException();
 
-            ServiceLoader locator = ServiceLocatorMocker.spyOnServiceLocator();
-            Mockito.when(locator.get(ContextService.class)).thenReturn(mockContextService);
-            Mockito.when(locator.get(ConfigAdapter.class)).thenReturn(mockConfigAdapter);
-            Mockito.when(locator.get(ExceptionAdapter.class)).thenReturn(mockExceptionAdapter);
+        Mockito.when(mockResponse.getWriter()).thenReturn(writer);
+        Mockito.when(mockContext.getFormat()).thenReturn(AuraContext.Format.JSON);
+        Mockito.when(mockContext.getMode()).thenReturn(Mode.PROD);
+        Mockito.when(mockConfigAdapter.isProduction()).thenReturn(true);
+        Mockito.when(mockContextService.getCurrentContext()).thenReturn(mockContext);
+        Mockito.when(mockContext.getInstanceStack()).thenThrow(firstException);
 
-            Mockito.when(mockResponse.getWriter()).thenReturn(writer);
-            Mockito.when(mockContext.getFormat()).thenReturn(AuraContext.Format.JSON);
-            Mockito.when(mockContext.getMode()).thenReturn(Mode.PROD);
-            Mockito.when(mockConfigAdapter.isProduction()).thenReturn(true);
-            Mockito.when(mockContextService.getCurrentContext()).thenReturn(mockContext);
-            Mockito.when(mockContext.getInstanceStack()).thenThrow(firstException);
+        Throwable exception = new InterruptedException("opps");
 
-            Throwable exception = new InterruptedException("opps");
+        ServletUtilAdapterImpl adapter = new ServletUtilAdapterImpl();
+        adapter.setContextService(mockContextService);
+        adapter.setConfigAdapter(mockConfigAdapter);
+        adapter.setExceptionAdapter(mockExceptionAdapter);
+        adapter.handleServletException(exception, true, mockContext, mockRequest, mockResponse, true);
 
-            Aura.getServletUtilAdapter().handleServletException(exception, true, mockContext, mockRequest, mockResponse, true);
+        ArgumentCaptor<Throwable> handledException = ArgumentCaptor.forClass(Throwable.class);
+        Mockito.verify(mockExceptionAdapter, Mockito.times(1)).handleException(handledException.capture());
 
-            ArgumentCaptor<Throwable> handledException = ArgumentCaptor.forClass(Throwable.class);
-            Mockito.verify(mockExceptionAdapter, Mockito.times(1)).handleException(handledException.capture());
+        assertTrue("Should handle EmptyStackException", handledException.getValue() instanceof EmptyStackException);
 
-            assertTrue("Should handle EmptyStackException", handledException.getValue() instanceof EmptyStackException);
-
-            Mockito.verify(mockResponse, atLeastOnce()).setStatus(HttpStatus.SC_INTERNAL_SERVER_ERROR);
-            Mockito.verify(mockContextService, atLeastOnce()).endContext();
-        } finally {
-            ServiceLocatorMocker.unmockServiceLocator();
-        }
+        Mockito.verify(mockResponse, atLeastOnce()).setStatus(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+        Mockito.verify(mockContextService, atLeastOnce()).endContext();
     }
 
     /**
@@ -861,45 +813,40 @@ public class ServerServiceImplTest extends AuraImplTestCase {
      * we throw second exception, then verify we printout the error message to response's writer
      */
     public void testHandleExceptionDoubleDeathCaught() throws Exception {
-        try {
-            PrintWriter writer = mock(PrintWriter.class);
-            HttpServletRequest mockRequest = mock(HttpServletRequest.class);
-            HttpServletResponse mockResponse = mock(HttpServletResponse.class);
-            ContextService mockContextService = mock(ContextService.class);
-            AuraContext mockContext = mock(AuraContext.class);
-            ConfigAdapter mockConfigAdapter = mock(ConfigAdapter.class);
-            ExceptionAdapter mockExceptionAdapter = mock(ExceptionAdapter.class);
+        PrintWriter writer = mock(PrintWriter.class);
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        HttpServletResponse mockResponse = mock(HttpServletResponse.class);
+        ContextService mockContextService = mock(ContextService.class);
+        AuraContext mockContext = mock(AuraContext.class);
+        ConfigAdapter mockConfigAdapter = mock(ConfigAdapter.class);
+        ExceptionAdapter mockExceptionAdapter = mock(ExceptionAdapter.class);
 
-            Throwable firstException = new EmptyStackException();
-            String ccmeMsg = "double dead";
-            Throwable secondException = new ConcurrentModificationException("double dead");
+        Throwable firstException = new EmptyStackException();
+        String ccmeMsg = "double dead";
+        Throwable secondException = new ConcurrentModificationException("double dead");
 
-            ServiceLoader locator = ServiceLocatorMocker.spyOnServiceLocator();
-            Mockito.when(locator.get(ContextService.class)).thenReturn(mockContextService);
-            Mockito.when(locator.get(ConfigAdapter.class)).thenReturn(mockConfigAdapter);
-            Mockito.when(locator.get(ExceptionAdapter.class)).thenReturn(mockExceptionAdapter);
+        Mockito.when(mockResponse.getWriter()).thenReturn(writer);
+        Mockito.when(mockContext.getFormat()).thenReturn(AuraContext.Format.HTML);
+        Mockito.when(mockContext.getMode()).thenReturn(Mode.DEV);
+        Mockito.when(mockConfigAdapter.isProduction()).thenReturn(false);
+        Mockito.when(mockContextService.getCurrentContext()).thenReturn(mockContext);
+        Mockito.when(mockContext.getInstanceStack()).thenThrow(firstException);
+        Mockito.when(mockExceptionAdapter.handleException(firstException)).thenThrow(secondException);
 
-            Mockito.when(mockResponse.getWriter()).thenReturn(writer);
-            Mockito.when(mockContext.getFormat()).thenReturn(AuraContext.Format.HTML);
-            Mockito.when(mockContext.getMode()).thenReturn(Mode.DEV);
-            Mockito.when(mockConfigAdapter.isProduction()).thenReturn(false);
-            Mockito.when(mockContextService.getCurrentContext()).thenReturn(mockContext);
-            Mockito.when(mockContext.getInstanceStack()).thenThrow(firstException);
-            Mockito.when(mockExceptionAdapter.handleException(firstException)).thenThrow(secondException);
+        Throwable exception = new InterruptedException("opps");
 
-            Throwable exception = new InterruptedException("opps");
+        ServletUtilAdapterImpl adapter = new ServletUtilAdapterImpl();
+        adapter.setContextService(mockContextService);
+        adapter.setConfigAdapter(mockConfigAdapter);
+        adapter.setExceptionAdapter(mockExceptionAdapter);
+        adapter.handleServletException(exception, true, mockContext, mockRequest, mockResponse, true);
 
-            Aura.getServletUtilAdapter().handleServletException(exception, true, mockContext, mockRequest, mockResponse, true);
+        ArgumentCaptor<String> exceptionMessage = ArgumentCaptor.forClass(String.class);
+        Mockito.verify(writer, Mockito.times(1)).println(exceptionMessage.capture());
 
-            ArgumentCaptor<String> exceptionMessage = ArgumentCaptor.forClass(String.class);
-            Mockito.verify(writer, Mockito.times(1)).println(exceptionMessage.capture());
-
-            assertEquals(ccmeMsg, exceptionMessage.getValue());
-            Mockito.verify(mockResponse, atLeastOnce()).setStatus(HttpStatus.SC_INTERNAL_SERVER_ERROR);
-            Mockito.verify(mockContextService, atLeastOnce()).endContext();
-        } finally {
-            ServiceLocatorMocker.unmockServiceLocator();
-        }
+        assertEquals(ccmeMsg, exceptionMessage.getValue());
+        Mockito.verify(mockResponse, atLeastOnce()).setStatus(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+        Mockito.verify(mockContextService, atLeastOnce()).endContext();
     }
 
 }

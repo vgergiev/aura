@@ -64,7 +64,7 @@ public interface BaseComponentDef extends RootDefinition {
      * @return all library requirements on this component, including those inherited
      * @throws QuickFixException
      */
-    Collection<ImportDef> getImportDefs() throws QuickFixException;
+    List<ImportDef> getImportDefs() throws QuickFixException;
 
     DefDescriptor<ModelDef> getLocalModelDefDescriptor();
 
@@ -73,11 +73,12 @@ public interface BaseComponentDef extends RootDefinition {
 
     List<DefDescriptor<ControllerDef>> getControllerDefDescriptors()
             throws QuickFixException;
+    List<ControllerDef> getLocalControllerDefs() throws QuickFixException;
 
     ModelDef getModelDef() throws QuickFixException;
 
-    ControllerDef getControllerDef() throws QuickFixException;
-    ControllerDef getDeclaredControllerDef() throws QuickFixException;
+    ControllerDef getLocalControllerDef() throws QuickFixException;
+    ControllerDef getRemoteControllerDef() throws QuickFixException;
 
     DefDescriptor<? extends BaseComponentDef> getExtendsDescriptor();
 

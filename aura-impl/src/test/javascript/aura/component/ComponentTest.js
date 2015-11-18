@@ -49,7 +49,17 @@ Test.Aura.Component.ComponentTest=function(){
                 error:function(message){throw new Error(message)},
                 getContext:function(){return {
                     getAccessVersion:function(){},
-                    getCurrentAction:function(){return null}                
+                    getCurrentAction:function(){
+                        return {
+                            topPath: function () {},
+                            getNextGlobalId: function () {},
+                            getId: function () {},
+                            getCurrentPath: function () {}
+                        };
+                    },
+                    containsComponentConfig: function () { return true;},
+                    releaseCurrentAccess:function(){},
+                    setCurrentAccess: function(){}
                 }},
                 componentService:{
                     get:function(){},
@@ -80,11 +90,10 @@ Test.Aura.Component.ComponentTest=function(){
                                 }}
                             },
                             getModelDef:function(){},
-                            getProviderDef:function(){},
-                            getRenderingDetails:function(){return {}},
                             getSuperDef:function(){},
                             getValueHandlerDefs:function(){},
-                            isAbstract:function(){}
+                            isAbstract:function(){},
+                            isInstanceOf:function(){}
                         };
                     },
                     index:function(){},
@@ -99,7 +108,6 @@ Test.Aura.Component.ComponentTest=function(){
                 },
                 util:{
                     apply:function(){
-
                     },
                     isArray:function(target){
                         return target instanceof Array;
@@ -109,9 +117,11 @@ Test.Aura.Component.ComponentTest=function(){
                     },
                     isString:function(target){
                         return typeof(target) == "string";
+                    },
+                    isUndefinedOrNull:function(){
                     }
                 }
-            } 
+            }
         };
         return Mocks.GetMocks(Object.Global(),mock)(during);
     }
@@ -356,6 +366,96 @@ Test.Aura.Component.ComponentTest=function(){
             Assert.Equal(expected, actual);
         }
     }//end of [Fixture] Index()
+
+    [ Fixture ]
+    function superRender() {
+        [ Fact ]
+        function ReturnsValueFromSuperComponentRender() {
+            // Arrange
+            var expected = "SuperRender";
+            var target = null;
+            var mockSuperComponent = {
+                    render: function() {
+                        return "SuperRender";
+                    }
+                };
+            mockFramework(function() {
+                target = new Aura.Component.Component({},true);
+            });
+            target.setSuperComponent(mockSuperComponent);
+
+            // Act
+            var actual = target.superRender();
+
+            // Assert
+            Assert.Equal(expected, actual);
+        }
+
+        [Fact]
+        function ReturnsUndefinedWhenNoSuperComponent() {
+            // Arrange
+            var target = null;
+            mockFramework(function() {
+                target = new Aura.Component.Component({},true);
+            });
+
+            // Act
+            var actual = target.superRender();
+
+            // Assert
+            Assert.Undefined(actual);
+        }
+    }
+
+    [ Fixture ]
+    function render() {
+        var mockSuperComponent = {
+            render: function() {
+                return "SuperRender";
+            }
+        };
+        [ Fact ]
+        function CallsOwnRenderWhenHasOwnRender() {
+            // Arrange
+            var expected = "Render";
+            var mockRenderer = {
+                    render: function() {return expected}
+                };
+            var actual = null;
+            mockFramework(function() {
+                var target = new Aura.Component.Component({},true);
+                target["renderer"] = mockRenderer;
+                // shouldn't call render in super component
+                target.setSuperComponent(mockSuperComponent);
+
+                // Act
+                actual = target.render();
+            });
+
+            // Assert
+            Assert.Equal(expected, actual);
+        }
+
+        [ Fact ]
+        function CallsSuperComponentRenderWhenNoOwnRender() {
+            // Arrange
+            var expected = "SuperRender";
+            var mockRenderer = {
+                    render: function() {return expected}
+                };
+            var actual = null;
+            mockFramework(function() {
+                var target = new Aura.Component.Component({},true);
+                target.setSuperComponent(mockSuperComponent);
+
+                // Act
+                actual = target.render();
+            });
+
+            // Assert
+            Assert.Equal(expected, actual);
+        }
+    }
 
     [ Fixture ]
     function GetDef() {

@@ -116,11 +116,25 @@
     	}
     },
     
+    /**
+     * Direct method to resize all the comments on the grid. Requires that
+     * v.enableResizableColumns is true.
+     */
+    resizeColumns : function(cmp, evt, helper) {
+    	var widths = evt.getParam('arguments').widths;
+    	
+    	if (!helper.getResizer(cmp)) {
+    		// We don't have a resizer yet
+    		return;
+    	}
+    	
+    	helper.resizeColumns(cmp, widths);
+    },
+    
     /*
     * DEPRECATED FROM OLD GRID
     */
-    handleRefresh: function (cmp, event, helper) {
-
+    handleRefresh: function () {
     },
     appendItems: function (cmp, event, helper) {
         var superCmp   = cmp.getSuper(),

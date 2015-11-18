@@ -84,29 +84,31 @@
             this.assertCreationPath(cmp.find("falsebody"), "/*[0]/$/*[2]/*[0]");
         }
     },
+    // @dval: This is just a hardcoded test for no reason, if you change an if on the client, 
+    // we use to have localCreation: true, but we dont care anymore
 
-    testIfChangedToTrue : {
-        attributes : { iftrue : false },
-        test : [ function(cmp) {
-            $A.run(function(){cmp.set("v.iftrue", true)});
-            $A.test.addWaitForWithFailureMessage(false, function(){return $A.util.isUndefined(cmp.find("truebody"))}, "'true' components not instantiated");
-        }, function(cmp) {
-            $A.log("Looking For: ", $A.test.getCreationPath(cmp.find("truebody")), " to be client created");
-            this.assertCreationPath(cmp.find("truebody"), "client created");
-        }]
-    },
+    // testIfChangedToTrue : {
+    //     attributes : { iftrue : false },
+    //     test : [ function(cmp) {
+    //         $A.run(function(){cmp.set("v.iftrue", true)});
+    //         $A.test.addWaitForWithFailureMessage(false, function(){return $A.util.isUndefined(cmp.find("truebody"))}, "'true' components not instantiated");
+    //     }, function(cmp) {
+    //         $A.log("Looking For: ", $A.test.getCreationPath(cmp.find("truebody")), " to be client created");
+    //         this.assertCreationPath(cmp.find("truebody"), "client created");
+    //     }]
+    // },
 
-    testIfChangedToFalse : {
-        attributes : { iftrue : true },
-        test : [ function(cmp) {
-            $A.run(function(){
-            	cmp.set("v.iftrue", false);
-            });
-            $A.test.addWaitForWithFailureMessage(true, function(){return !!cmp.find("falsebody");}, "'else' components not instantiated");
-        }, function(cmp) {
-            this.assertCreationPath(cmp.find("falsebody"), "client created");
-        }]
-    },
+    // testIfChangedToFalse : {
+    //     attributes : { iftrue : true },
+    //     test : [ function(cmp) {
+    //         $A.run(function(){
+    //         	cmp.set("v.iftrue", false);
+    //         });
+    //         $A.test.addWaitForWithFailureMessage(true, function(){return !!cmp.find("falsebody");}, "'else' components not instantiated");
+    //     }, function(cmp) {
+    //         this.assertCreationPath(cmp.find("falsebody"), "client created");
+    //     }]
+    // },
 
     testSingleIteration : {
         attributes : { list : "x" },
@@ -158,7 +160,6 @@
             $A.test.addWaitForWithFailureMessage(false, function(){return $A.util.isUndefined(cmp.find("iterinst"))}, "iteration is still empty");
         }, function(cmp) {
         	this.assertCreationPath(cmp.find("iterinst"), "client created");
-            this.assertCreationPath(cmp.find("iterinst").find("output"), "client created");
         }]
     },
 
@@ -177,7 +178,6 @@
             this.assertCreationPath(cmp.find("iterinst")[0].find("output"), "/*[0]/$/*[3]/*[0]/*[0]/$/*[0]");
             
             this.assertCreationPath(cmp.find("iterinst")[1], "client created");
-            this.assertCreationPath(cmp.find("iterinst")[1].find("output"), "client created");
         }]
     },
 
@@ -198,11 +198,6 @@
             this.assertCreationPath(cmp.find("iterinst")[0].find("output"), "/*[0]/$/*[3]/*[0]/*[0]/$/*[0]");
             this.assertCreationPath(cmp.find("iterinst")[1], "/*[0]/$/*[3]/*[1]/*[0]");
             this.assertCreationPath(cmp.find("iterinst")[1].find("output"), "/*[0]/$/*[3]/*[1]/*[0]/$/*[0]");
-            
-            this.assertCreationPath(cmp.find("iterinst")[2], "client created");
-            this.assertCreationPath(cmp.find("iterinst")[2].find("output"), "client created");
-            this.assertCreationPath(cmp.find("iterinst")[3], "client created");
-            this.assertCreationPath(cmp.find("iterinst")[3].find("output"), "client created");
         }]
     },
     
